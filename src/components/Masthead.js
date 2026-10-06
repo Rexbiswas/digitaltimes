@@ -16,16 +16,51 @@ export default function Masthead({
   onPrintBroadsheet,
   onAudioEdition,
 }) {
-  const [currentTime, setCurrentTime] = useState("");
+  const [currentDateTime, setCurrentDateTime] = useState({
+    time: "",
+    dateFull: "",
+    dateMedium: "",
+    dateShort: "",
+    dateline: "",
+  });
 
   useEffect(() => {
+    const daysShort = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+    const monthsShort = [
+      "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+      "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+    ];
+    const daysFull = [
+      "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"
+    ];
+    const monthsFull = [
+      "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+      "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
+    ];
+
     const updateTime = () => {
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, "0");
       const mm = String(now.getMinutes()).padStart(2, "0");
       const ss = String(now.getSeconds()).padStart(2, "0");
-      setCurrentTime(`${hh}:${mm}:${ss}`);
+
+      const dayShort = daysShort[now.getDay()];
+      const monthShort = monthsShort[now.getMonth()];
+      const dateNum = now.getDate();
+      const year = now.getFullYear();
+
+      const dayFull = daysFull[now.getDay()];
+      const monthFull = monthsFull[now.getMonth()];
+
+      setCurrentDateTime({
+        time: `${hh}:${mm}:${ss}`,
+        dateFull: `${dayShort}, ${monthShort} ${dateNum}, ${year}`,
+        dateMedium: `${dayShort}, ${monthShort} ${dateNum}`,
+        dateShort: `${monthShort} ${dateNum}`,
+        dateline: `${dayFull}, ${monthFull} ${dateNum}, ${year}`,
+      });
     };
+
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
@@ -50,17 +85,60 @@ export default function Masthead({
 
             {/* Right Ear: Live Clock, Clippings, Print */}
             <div className="flex items-center space-x-2 sm:space-x-4 shrink-0 text-[10px] sm:text-[11px]">
-              {onOpenDashboard && (
+              {onOpenDashboard ? (
+                <button
+                  onClick={onOpenDashboard}
+                  className="hover:text-[#A71919] font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-colors text-[#111111] bg-[#111111]/5 px-1.5 sm:px-2 py-0.5 rounded shadow-2xs whitespace-nowrap"
+                  title="Switch to Your Times Personal Dashboard"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <span suppressHydrationWarning className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
+                    {currentDateTime.time ? (
+                      <>
+                        <span className="hidden md:inline">{currentDateTime.dateFull}</span>
+                        <span className="hidden sm:inline md:hidden">{currentDateTime.dateMedium}</span>
+                        <span className="sm:hidden">{currentDateTime.dateShort}</span>
+                        <span className="opacity-40">•</span>
+                        <span>{currentDateTime.time}</span>
+                      </>
+                    ) : (
+                      <span>12:00:00</span>
+                    )}
+                  </span>
+                </button>
+              ) : (
+                <div
+                  className="font-bold flex items-center gap-1 sm:gap-1.5 text-[#111111] bg-[#111111]/5 px-1.5 sm:px-2 py-0.5 rounded shadow-2xs whitespace-nowrap"
+                  title="Real-Time Network Clock"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <span suppressHydrationWarning className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
+                    {currentDateTime.time ? (
+                      <>
+                        <span className="hidden md:inline">{currentDateTime.dateFull}</span>
+                        <span className="hidden sm:inline md:hidden">{currentDateTime.dateMedium}</span>
+                        <span className="sm:hidden">{currentDateTime.dateShort}</span>
+                        <span className="opacity-40">•</span>
+                        <span>{currentDateTime.time}</span>
+                      </>
+                    ) : (
+                      <span>12:00:00</span>
+                    )}
+                  </span>
+                </div>
+              )}
+              <span className="text-[#1A1A1A]/30">|</span>
+
+              {onOpenSearch && (
                 <>
                   <button
-                    onClick={onOpenDashboard}
-                    className="hover:text-[#A71919] font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-colors text-[#111111] bg-[#111111]/5 px-1.5 sm:px-2 py-0.5 rounded shadow-2xs"
-                    title="Switch to Your Times Personal Dashboard"
+                    onClick={onOpenSearch}
+                    className="hover:text-[#A71919] flex items-center gap-1 cursor-pointer transition-colors font-semibold"
+                    title="Search Archive Broadsheet"
+                    data-cursor="SEARCH"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span suppressHydrationWarning className="font-mono text-[10px] sm:text-xs">
-                      {currentTime || "12:00:00"}
-                    </span>
+                    <Search className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Search</span>
                   </button>
                   <span className="text-[#1A1A1A]/30">|</span>
                 </>
@@ -129,7 +207,7 @@ export default function Masthead({
           {/* Dateline, Volume, City Bureau Bar (Responsive) */}
           <div className="flex flex-col sm:flex-row items-center justify-between text-[10px] sm:text-xs font-mono font-semibold tracking-wider text-[#111111] py-1 border-b border-[#1A1A1A] gap-1 sm:gap-0">
             <div className="flex items-center space-x-2 sm:space-x-3">
-              <span>{mastheadData.date}</span>
+              <span suppressHydrationWarning>{currentDateTime.dateline || mastheadData.date}</span>
               <span>•</span>
               <span className="text-[#A71919] font-bold">{mastheadData.vol}</span>
             </div>

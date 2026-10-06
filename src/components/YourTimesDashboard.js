@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import {
   Home,
@@ -12,8 +12,11 @@ import {
   Settings,
   Search,
   SlidersHorizontal,
+  ArrowUpDown,
+  Filter,
   Plus,
   Clock,
+  Calendar,
   ExternalLink,
   ChevronRight,
   TrendingUp,
@@ -31,6 +34,7 @@ import {
   Trash2
 } from "lucide-react";
 import { dashboardRecommendedStories, breakingHeadlines } from "@/data/newspaperData";
+import CalendarDateSelector from "./CalendarDateSelector";
 
 export default function YourTimesDashboard({
   user,
@@ -39,10 +43,22 @@ export default function YourTimesDashboard({
   onSaveClipping,
   isSaved,
   savedClippings = [],
+  clippings = [],
   onNavigateToBroadsheet,
   onOpenSearchModal,
   onUpdateUser,
 }) {
+  const safeClippings = Array.isArray(savedClippings)
+    ? savedClippings
+    : Array.isArray(clippings)
+    ? clippings
+    : [];
+
+  const checkIsSaved = (id) => {
+    if (typeof isSaved === "function") return isSaved(id);
+    return safeClippings.some((item) => item?.id === id);
+  };
+
   const [currentUser, setCurrentUser] = useState(
     user
       ? { ...user, avatar: null }
@@ -125,7 +141,25 @@ export default function YourTimesDashboard({
   const [liveTicks, setLiveTicks] = useState(0);
 
   // Active Category Pill Filter (Default: "AI" as in user screenshot)
-  const [activeCategory, setActiveCategory] = useState("AI");
+  const [activeCategory, setActiveCategory] = useState("ALL");
+
+  // Calendar Date Selector State (e.g. "2026-10-05" for today, or null for all dates)
+  const [selectedDate, setSelectedDate] = useState("2026-10-05");
+
+  // Sorting and Additional Filtering State
+  const [sortBy, setSortBy] = useState("latest"); // "latest", "quickest", "indepth", "alphabetical", "desk"
+  const [readTimeFilter, setReadTimeFilter] = useState("all"); // "all", "short", "long"
+  const [savedOnlyFilter, setSavedOnlyFilter] = useState(false);
+
+  const availableDates = [
+    "2026-10-05",
+    "2026-10-04",
+    "2026-10-03",
+    "2026-10-02",
+    "2026-10-01",
+    "2026-09-30",
+    "2026-09-29"
+  ];
 
   // Navigation Sidebar Active Tab
   const [activeTab, setActiveTab] = useState("yourtimes"); // "home", "yourtimes", "bookmarks", "history", "following", "notifications", "settings"
@@ -202,6 +236,7 @@ export default function YourTimesDashboard({
 
   // Real-Time Interval: sets realTime on client mount and ticks every 1 second
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
     setRealTime(new Date());
     const timer = setInterval(() => {
@@ -211,65 +246,165 @@ export default function YourTimesDashboard({
     return () => clearInterval(timer);
   }, []);
 
+
   // Load history from localStorage
   useEffect(() => {
     try {
       const savedHistory = localStorage.getItem("times_reading_history");
       if (savedHistory) {
-        setReadingHistory(JSON.parse(savedHistory));
+        const parsed = JSON.parse(savedHistory);
+        if (Array.isArray(parsed)) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setReadingHistory(parsed);
+        }
       }
     } catch (e) {}
   }, []);
 
+  const safeReadingHistory = Array.isArray(readingHistory) ? readingHistory : [];
+
   const handleArticleClick = (story) => {
+    if (!story) return;
+    const currentHist = Array.isArray(readingHistory) ? readingHistory : [];
     // Add to reading history
     const updatedHistory = [
       story,
-      ...readingHistory.filter((item) => item.id !== story.id)
+      ...currentHist.filter((item) => item?.id !== story.id)
     ].slice(0, 20);
     setReadingHistory(updatedHistory);
     try {
       localStorage.setItem("times_reading_history", JSON.stringify(updatedHistory));
     } catch (e) {}
 
-    onOpenArticle(story);
+    onOpenArticle?.(story);
   };
 
-  // Top navigation categories from the screenshot
-  const topNavCategories = [
-    { label: "HOME", action: () => onNavigateToBroadsheet?.("frontpage") },
-    { label: "AI", action: () => { setActiveTab("yourtimes"); setActiveCategory("AI"); } },
-    { label: "WEB", action: () => { setActiveTab("yourtimes"); setActiveCategory("Web"); } },
-    { label: "STARTUPS", action: () => { setActiveTab("yourtimes"); setActiveCategory("Startups"); } },
-    { label: "DESIGN", action: () => { setActiveTab("yourtimes"); setActiveCategory("Design"); } },
-    { label: "BIG TECH", action: () => { setActiveTab("yourtimes"); setActiveCategory("Technology"); } },
-    { label: "SECURITY", action: () => { setActiveTab("yourtimes"); setActiveCategory("Security"); } },
-    { label: "TECHNOLOGY", action: () => { setActiveTab("yourtimes"); setActiveCategory("Technology"); } },
-    { label: "GAMING", action: () => { setActiveTab("yourtimes"); setActiveCategory("Gaming"); } },
-    { label: "CULTURE", action: () => onNavigateToBroadsheet?.("culture") },
-    { label: "BUSINESS", action: () => onNavigateToBroadsheet?.("business") },
-    { label: "FUTURE", action: () => onNavigateToBroadsheet?.("future") }
-  ];
 
   // Category pills for the "YOUR TIMES" tab
   const categoryPills = ["All", "AI", "Web", "Startups", "Security", "Design", "Gaming"];
 
-  // Filter recommended stories
-  // When activeCategory is "AI" (as shown selected in the screenshot) or "All",
-  // show the three featured recommended stories from the screenshot.
-  // If user clicks a specific other category like "Security", filter accordingly.
-  const filteredStories = dashboardRecommendedStories.filter((story) => {
-    if (activeCategory === "All" || activeCategory === "AI") {
-      return ["rec-ai-agents", "rec-indian-startup", "rec-browser-features"].includes(story.id);
+  // Selected date human-readable label
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDate) return "ALL EDITIONS";
+    const parts = selectedDate.split("-");
+    if (parts.length === 3) {
+      const monthNames = [
+        "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+        "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
+      ];
+      const m = monthNames[parseInt(parts[1], 10) - 1];
+      const d = parseInt(parts[2], 10);
+      const y = parts[0];
+      if (selectedDate === "2026-10-05") {
+        return `TODAY • ${m} ${d}, ${y}`;
+      }
+      return `${m} ${d}, ${y}`;
     }
-    return story.desk?.toLowerCase() === activeCategory.toLowerCase();
-  });
+    return selectedDate;
+  }, [selectedDate]);
+
+  // Filter & sort recommended stories by selected calendar edition date, category, filters, and sort order
+  const filteredStories = useMemo(() => {
+    let pool = [...dashboardRecommendedStories];
+
+    // 1. Filter by selected date
+    if (selectedDate) {
+      const matchingDate = pool.filter((s) => s.dateIso === selectedDate);
+      if (matchingDate.length > 0) {
+        pool = matchingDate;
+      } else {
+        // If user selected an archival date without pre-defined recommended story:
+        const parts = selectedDate.split("-");
+        const monthNames = [
+          "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+          "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
+        ];
+        const dateDisplay = parts.length === 3
+          ? `${monthNames[parseInt(parts[1], 10) - 1]} ${parseInt(parts[2], 10)}, ${parts[0]}`
+          : selectedDate;
+
+        pool = [
+          {
+            id: `archive-${selectedDate}-dispatch`,
+            headline: `Archival Wire Dispatch: Historical Broadsheet Edition for ${dateDisplay}`,
+            desk: activeCategory === "All" ? "AI" : activeCategory,
+            minutesAgo: 60,
+            image: "/images/hero_editorial.jpg",
+            author: "By EDITORIAL ARCHIVE BUREAU",
+            readTime: "4 MIN READ",
+            date: dateDisplay,
+            dateIso: selectedDate,
+            topic: "Archive Edition",
+            deck: `Archival records retrieved from the permanent Zurich Digital Vault cataloged for ${dateDisplay}. Verified cryptographic proof attached.`,
+            leadParagraph: `The Digital Times archival record for ${dateDisplay} documents the operational milestones, peer compute networks, and regulatory decisions recorded during this cycle.`,
+            bodyParagraphs: [
+              "Every teletype transmission and investigative wire from this period is preserved in the cold storage data vault with continuous post-quantum signatures.",
+              "Readers can review the recorded findings or jump back to today's live breaking coverage."
+            ]
+          },
+          ...dashboardRecommendedStories.slice(0, 2)
+        ];
+      }
+    }
+
+    // 2. Filter by active category
+    if (activeCategory !== "All") {
+      const byCategory = pool.filter((s) => s.desk?.toLowerCase() === activeCategory.toLowerCase());
+      if (byCategory.length > 0) {
+        pool = byCategory;
+      }
+    }
+
+    // 3. Filter by read time
+    if (readTimeFilter === "short") {
+      pool = pool.filter((s) => {
+        const mins = parseInt(s.readTime, 10) || 4;
+        return mins <= 4;
+      });
+    } else if (readTimeFilter === "long") {
+      pool = pool.filter((s) => {
+        const mins = parseInt(s.readTime, 10) || 5;
+        return mins >= 5;
+      });
+    }
+
+    // 4. Filter by saved only
+    if (savedOnlyFilter) {
+      pool = pool.filter((s) => checkIsSaved(s.id));
+    }
+
+    // 5. Apply sorting
+    const sorted = [...pool].sort((a, b) => {
+      if (sortBy === "latest") {
+        return (a.minutesAgo || 10) - (b.minutesAgo || 10);
+      }
+      if (sortBy === "quickest") {
+        const aMins = parseInt(a.readTime, 10) || 5;
+        const bMins = parseInt(b.readTime, 10) || 5;
+        return aMins - bMins;
+      }
+      if (sortBy === "indepth") {
+        const aMins = parseInt(a.readTime, 10) || 5;
+        const bMins = parseInt(b.readTime, 10) || 5;
+        return bMins - aMins;
+      }
+      if (sortBy === "alphabetical") {
+        return (a.headline || "").localeCompare(b.headline || "");
+      }
+      if (sortBy === "desk") {
+        return (a.desk || "").localeCompare(b.desk || "");
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [selectedDate, activeCategory, readTimeFilter, savedOnlyFilter, sortBy, safeClippings, isSaved]);
 
   // Stories to show in Recommended section
   const recommendedCards =
-    filteredStories.length > 0
+    Array.isArray(filteredStories) && filteredStories.length > 0
       ? filteredStories
-      : dashboardRecommendedStories.slice(0, 3);
+      : [];
 
 
 
@@ -308,25 +443,83 @@ export default function YourTimesDashboard({
   return (
     <div className="min-h-screen md:h-screen md:overflow-hidden bg-[#F2EEE5] text-[#111111] font-sans antialiased selection:bg-[#111111] selection:text-[#F2EEE5] flex flex-col">
       <header className="w-full bg-[#F2EEE5] border-b border-[#1A1A1A] select-none shrink-0 z-40 shadow-xs">
-        {/* Upper Masthead Row */}
-        <div className="max-w-[1440px] mx-auto px-3 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Left Brand Badge */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <div className="bg-[#A71919] text-[#F2EEE5] text-[9px] sm:text-[10px] font-bold font-mono px-1.5 sm:px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+        {/* Mobile & Small Tablet Header (< md): Clean 2-row editorial layout with uncompromised centered Masthead */}
+        <div className="md:hidden px-3 pt-2 pb-1.5 flex flex-col gap-1.5">
+          {/* Row 1: Live Badge & Date Selector on Left | Search & Profile on Right */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="bg-[#A71919] text-[#F2EEE5] text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span>LIVE</span>
+              </div>
+
+              <CalendarDateSelector
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                availableDates={availableDates}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => onOpenSearchModal && onOpenSearchModal()}
+                className="p-1.5 text-[#111111] hover:bg-[#E4DDD0] rounded-full transition-colors cursor-pointer flex items-center justify-center"
+                title="Search"
+                aria-label="Search"
+              >
+                <Search className="w-4 h-4 text-[#111111]" />
+              </button>
+
+              <button
+                onClick={() => setIsLoginOpen(true)}
+                className="relative rounded-full transition-transform hover:scale-105 active:scale-95 cursor-pointer shadow-xs flex items-center justify-center group"
+                aria-label={`Profile: ${currentUser.name}`}
+                title={currentUser.name}
+              >
+                <div className="w-7 h-7 rounded-full border border-[#1A1A1A] ring-1 ring-[#C5A059]/40 bg-[#111111] flex items-center justify-center text-[#F2EEE5] select-none shadow-xs">
+                  <span className="text-[10px] font-serif font-bold tracking-wider">
+                    {getInitials(currentUser.name)}
+                  </span>
+                </div>
+                <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-[#F2EEE5]" />
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Grand Masthead Centered & Never Truncated */}
+          <div className="text-center cursor-pointer border-t border-[#1A1A1A]/10 pt-1" onClick={() => setActiveTab("yourtimes")}>
+            <h1 className="font-masthead text-2xl xs:text-3xl text-[#111111] font-normal select-none hover:opacity-90 transition-opacity leading-none tracking-tight">
+              The Digital Times
+            </h1>
+          </div>
+        </div>
+
+        {/* Desktop Header (>= md): Classic 1-row layout */}
+        <div className="hidden md:flex max-w-[1440px] mx-auto px-6 py-2.5 items-center justify-between gap-4">
+          {/* Left Brand Badge & Calendar Date Selector */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               <span>LIVE</span>
             </div>
+
+            {/* Calendar Date Picker: User can select which date's news they want to see */}
+            <CalendarDateSelector
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              availableDates={availableDates}
+            />
           </div>
 
           {/* Center Grand Masthead Title */}
           <div className="text-center cursor-pointer min-w-0" onClick={() => setActiveTab("yourtimes")}>
-            <h1 className="font-masthead text-lg sm:text-2xl md:text-3xl lg:text-4xl text-[#111111] font-normal select-none hover:opacity-90 transition-opacity truncate sm:overflow-visible leading-none">
+            <h1 className="font-masthead text-2xl md:text-3xl lg:text-4xl text-[#111111] font-normal select-none hover:opacity-90 transition-opacity leading-none">
               The Digital Times
             </h1>
           </div>
 
           {/* Right Utility: Search & Login */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             {/* Search Icon Button */}
             <button
               onClick={() => onOpenSearchModal && onOpenSearchModal()}
@@ -344,32 +537,14 @@ export default function YourTimesDashboard({
               aria-label={`Profile: ${currentUser.name}`}
               title={currentUser.name}
             >
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-[#1A1A1A] ring-1 ring-[#C5A059]/40 bg-[#111111] flex items-center justify-center text-[#F2EEE5] group-hover:bg-[#2A2A2A] transition-colors select-none shadow-xs">
-                <span className="text-[11px] sm:text-xs font-serif font-bold tracking-wider">
+              <div className="w-8 h-8 lg:w-9 lg:h-9 rounded-full border-2 border-[#1A1A1A] ring-1 ring-[#C5A059]/40 bg-[#111111] flex items-center justify-center text-[#F2EEE5] group-hover:bg-[#2A2A2A] transition-colors select-none shadow-xs">
+                <span className="text-xs font-serif font-bold tracking-wider">
                   {getInitials(currentUser.name)}
                 </span>
               </div>
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#F2EEE5]" />
             </button>
           </div>
-        </div>
-
-        {/* Thin Oxford Separator */}
-        <div className="border-t border-[#1A1A1A]/20" />
-
-        {/* Lower Horizontal Category Navigation Bar */}
-        <div className="max-w-[1440px] mx-auto px-4 overflow-x-auto no-scrollbar scrollbar-none py-2">
-          <nav className="flex items-center justify-between sm:justify-center gap-4 sm:gap-6 md:gap-8 min-w-max text-[11px] sm:text-xs font-serif font-bold uppercase tracking-wider text-[#333333]">
-            {topNavCategories.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={item.action}
-                className="hover:text-[#A71919] transition-colors cursor-pointer whitespace-nowrap py-0.5 no-underline"
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
         </div>
       </header>
 
@@ -424,9 +599,9 @@ export default function YourTimesDashboard({
                 >
                   <Bookmark className="w-3.5 h-3.5" />
                   <span>Bookmarks</span>
-                  {savedClippings.length > 0 && (
+                  {safeClippings.length > 0 && (
                     <span className="bg-[#A71919] text-[#F2EEE5] text-[9px] font-bold px-1.5 rounded-full">
-                      {savedClippings.length}
+                      {safeClippings.length}
                     </span>
                   )}
                 </button>
@@ -441,8 +616,8 @@ export default function YourTimesDashboard({
                 >
                   <History className="w-3.5 h-3.5" />
                   <span>History</span>
-                  {readingHistory.length > 0 && (
-                    <span className="text-[10px] opacity-70">({readingHistory.length})</span>
+                  {safeReadingHistory.length > 0 && (
+                    <span className="text-[10px] opacity-70">({safeReadingHistory.length})</span>
                   )}
                 </button>
 
@@ -557,7 +732,7 @@ export default function YourTimesDashboard({
                 {/* Bookmarks */}
                 <button
                   onClick={() => setActiveTab("bookmarks")}
-                  aria-label={`Bookmarks (${savedClippings.length})`}
+                  aria-label={`Bookmarks (${safeClippings.length})`}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "bookmarks"
                       ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
@@ -565,15 +740,15 @@ export default function YourTimesDashboard({
                   }`}
                 >
                   <Bookmark className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  {savedClippings.length > 0 && (
+                  {safeClippings.length > 0 && (
                     <span className="absolute top-1 right-1 bg-[#A71919] text-[#F2EEE5] text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
-                      {savedClippings.length}
+                      {safeClippings.length}
                     </span>
                   )}
                   <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Bookmarks</span>
                     <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#A71919] text-[#F2EEE5]">
-                      {savedClippings.length} saved
+                      {safeClippings.length} saved
                     </span>
                     <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
                   </div>
@@ -582,7 +757,7 @@ export default function YourTimesDashboard({
                 {/* Reading History */}
                 <button
                   onClick={() => setActiveTab("history")}
-                  aria-label={`Reading History (${readingHistory.length})`}
+                  aria-label={`Reading History (${safeReadingHistory.length})`}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "history"
                       ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
@@ -590,14 +765,14 @@ export default function YourTimesDashboard({
                   }`}
                 >
                   <History className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  {readingHistory.length > 0 && (
+                  {safeReadingHistory.length > 0 && (
                     <span className="absolute top-1 right-1 text-[8px] font-mono bg-[#1A1A1A]/20 text-[#111111] w-3.5 h-3.5 rounded-full flex items-center justify-center">
-                      {readingHistory.length}
+                      {safeReadingHistory.length}
                     </span>
                   )}
                   <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Reading History</span>
-                    <span className="text-[10px] font-mono text-[#999999]">{readingHistory.length} read</span>
+                    <span className="text-[10px] font-mono text-[#999999]">{safeReadingHistory.length} read</span>
                     <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
                   </div>
                 </button>
@@ -768,7 +943,7 @@ export default function YourTimesDashboard({
                   {/* Bookmarks */}
                   <button
                     onClick={() => setActiveTab("bookmarks")}
-                    title={`Bookmarks (${savedClippings.length})`}
+                    title={`Bookmarks (${safeClippings.length})`}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "bookmarks"
                         ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
@@ -777,9 +952,9 @@ export default function YourTimesDashboard({
                   >
                     <Bookmark className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
                     <span className="truncate">Bookmarks</span>
-                    {savedClippings.length > 0 && (
+                    {safeClippings.length > 0 && (
                       <span className="ml-auto bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                        {savedClippings.length}
+                        {safeClippings.length}
                       </span>
                     )}
                   </button>
@@ -787,7 +962,7 @@ export default function YourTimesDashboard({
                   {/* History */}
                   <button
                     onClick={() => setActiveTab("history")}
-                    title={`Reading History (${readingHistory.length})`}
+                    title={`Reading History (${safeReadingHistory.length})`}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "history"
                         ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
@@ -796,9 +971,9 @@ export default function YourTimesDashboard({
                   >
                     <History className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
                     <span className="truncate">Reading History</span>
-                    {readingHistory.length > 0 && (
+                    {safeReadingHistory.length > 0 && (
                       <span className="ml-auto text-[10px] font-mono text-[#777777]">
-                        {readingHistory.length}
+                        {safeReadingHistory.length}
                       </span>
                     )}
                   </button>
@@ -935,8 +1110,151 @@ export default function YourTimesDashboard({
                   </button>
                 </div>
 
-                {/* 3 Responsive Cards Grid Matching Screenshot Exact Visuals */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* ── Sort & Filter Controls Bar ────────────────── */}
+                <div className="bg-[#FAF7F0] border border-[#1A1A1A]/15 rounded-xl p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+                  {/* Left: Active Date & Status Tag */}
+                  <div className="flex items-center flex-wrap gap-2 text-xs font-mono">
+                    <div className="flex items-center gap-1.5 bg-[#EFEAE0] border border-[#1A1A1A]/20 px-2.5 py-1 rounded-lg font-bold text-[#111111]">
+                      <Calendar className="w-3.5 h-3.5 text-[#A71919]" />
+                      <span className="uppercase">{selectedDate ? selectedDateLabel : "ALL OCTOBER EDITIONS"}</span>
+                    </div>
+
+                    <span className="text-[#555555] font-semibold text-[11px]">
+                      • {recommendedCards.length} {recommendedCards.length === 1 ? "story" : "stories"}
+                    </span>
+
+                    {/* Filter Active Tags */}
+                    {activeCategory !== "All" && (
+                      <span className="bg-[#111111] text-[#F2EEE5] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        Desk: {activeCategory}
+                        <button type="button" onClick={() => setActiveCategory("All")} className="hover:text-red-300 cursor-pointer">
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </span>
+                    )}
+
+                    {readTimeFilter !== "all" && (
+                      <span className="bg-[#111111] text-[#F2EEE5] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        {readTimeFilter === "short" ? "Quick (<5m)" : "In-Depth (5m+)"}
+                        <button type="button" onClick={() => setReadTimeFilter("all")} className="hover:text-red-300 cursor-pointer">
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </span>
+                    )}
+
+                    {savedOnlyFilter && (
+                      <span className="bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        Bookmarked Only
+                        <button type="button" onClick={() => setSavedOnlyFilter(false)} className="hover:text-amber-200 cursor-pointer">
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </span>
+                    )}
+
+                    {selectedDate && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDate(null)}
+                        className="text-[10px] font-bold text-[#A71919] hover:underline uppercase cursor-pointer"
+                      >
+                        Reset Date
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Right: Sort and Quick Filter Selectors */}
+                  <div className="flex items-center flex-wrap gap-2 text-xs font-mono">
+                    {/* Read Time Filter Pills */}
+                    <div className="flex items-center border border-[#1A1A1A]/20 rounded-lg overflow-hidden bg-[#EFEAE0]/80">
+                      <button
+                        type="button"
+                        onClick={() => setReadTimeFilter("all")}
+                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
+                          readTimeFilter === "all" ? "bg-[#111111] text-[#F2EEE5]" : "text-[#555555] hover:text-[#111111]"
+                        }`}
+                        title="Show all lengths"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReadTimeFilter("short")}
+                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#1A1A1A]/15 ${
+                          readTimeFilter === "short" ? "bg-[#111111] text-[#F2EEE5]" : "text-[#555555] hover:text-[#111111]"
+                        }`}
+                        title="Short reads under 5 minutes"
+                      >
+                        &lt; 5m
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReadTimeFilter("long")}
+                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#1A1A1A]/15 ${
+                          readTimeFilter === "long" ? "bg-[#111111] text-[#F2EEE5]" : "text-[#555555] hover:text-[#111111]"
+                        }`}
+                        title="In-depth reads 5 minutes or longer"
+                      >
+                        5m+
+                      </button>
+                    </div>
+
+                    {/* Bookmarked Filter Button */}
+                    <button
+                      type="button"
+                      onClick={() => setSavedOnlyFilter((prev) => !prev)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                        savedOnlyFilter
+                          ? "bg-[#A71919] text-[#F2EEE5] border-[#A71919] shadow-2xs"
+                          : "bg-[#EFEAE0] hover:bg-[#E4DDD0] border-[#1A1A1A]/20 text-[#444444]"
+                      }`}
+                      title="Filter only saved bookmarks"
+                    >
+                      <Bookmark className={`w-3 h-3 ${savedOnlyFilter ? "fill-white" : ""}`} />
+                      <span className="hidden xs:inline">Saved</span>
+                    </button>
+
+                    {/* Sort By Dropdown */}
+                    <div className="flex items-center gap-1 bg-[#EFEAE0] border border-[#1A1A1A]/20 px-2 py-1 rounded-lg">
+                      <ArrowUpDown className="w-3 h-3 text-[#A71919] shrink-0" />
+                      <span className="text-[10px] text-[#777777] uppercase font-bold shrink-0">SORT:</span>
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="bg-transparent font-bold text-xs text-[#111111] outline-hidden cursor-pointer tracking-tight"
+                        aria-label="Sort news articles"
+                      >
+                        <option value="latest">Latest First</option>
+                        <option value="quickest">Quickest Read</option>
+                        <option value="indepth">In-Depth First</option>
+                        <option value="alphabetical">Headline (A–Z)</option>
+                        <option value="desk">By Desk</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {recommendedCards.length === 0 ? (
+                  <div className="bg-[#FAF7F0] border-2 border-dashed border-[#1A1A1A]/20 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-2">
+                    <Filter className="w-8 h-8 text-[#A71919]/60" />
+                    <h4 className="font-serif font-bold text-lg text-[#111111]">No stories matched these filters</h4>
+                    <p className="text-xs font-mono text-[#666666] max-w-md">
+                      Try resetting the read-time or category filters to view other stories available for this October edition.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveCategory("All");
+                        setReadTimeFilter("all");
+                        setSavedOnlyFilter(false);
+                      }}
+                      className="mt-2 text-xs font-mono font-bold bg-[#111111] text-[#F2EEE5] px-3 py-1.5 rounded-lg cursor-pointer hover:bg-[#222222]"
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
+                ) : (
+                /* Responsive Cards Grid: 1 col on mobile, 2 cols on tablet, 3 cols on desktop */
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                   {recommendedCards.map((story) => (
                     <article
                       key={story.id}
@@ -976,7 +1294,7 @@ export default function YourTimesDashboard({
                           </h4>
                         </div>
 
-                        {/* Metadata Row: Category & Real-Time Dynamic Timestamp */}
+                        {/* Metadata Row: Category & Publication Date */}
                         <div className="mt-3 pt-3 border-t border-[#1A1A1A]/10 flex items-center justify-between text-[11px] font-mono text-[#555555]">
                           <div className="flex items-center gap-1.5">
                             <span className="font-bold text-[#111111] uppercase tracking-wider">
@@ -987,7 +1305,7 @@ export default function YourTimesDashboard({
                               suppressHydrationWarning
                               className="text-[#A71919] font-semibold"
                             >
-                              {getDynamicTimeAgo(story.minutesAgo || 15)}
+                              {story.date || getDynamicTimeAgo(story.minutesAgo || 15)}
                             </span>
                           </div>
 
@@ -999,6 +1317,7 @@ export default function YourTimesDashboard({
                     </article>
                   ))}
                 </div>
+                )}
               </section>
 
               {/* ── Section: "Your Topics" ────────────────────────── */}
@@ -1094,7 +1413,7 @@ export default function YourTimesDashboard({
                 <div>
                   <h2 className="font-serif font-bold text-3xl text-[#111111]">Your Saved Bookmarks</h2>
                   <p className="text-xs font-mono text-[#666666] uppercase mt-1">
-                    {savedClippings.length} ARTICLES SAVED IN YOUR SCRAPBOOK
+                    {safeClippings.length} ARTICLES SAVED IN YOUR SCRAPBOOK
                   </p>
                 </div>
                 <button
@@ -1105,7 +1424,7 @@ export default function YourTimesDashboard({
                 </button>
               </div>
 
-              {savedClippings.length === 0 ? (
+              {safeClippings.length === 0 ? (
                 <div className="bg-[#FAF7F0] border border-dashed border-[#1A1A1A]/30 rounded-xl p-8 text-center">
                   <Bookmark className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
                   <p className="font-serif text-lg text-[#333333]">No saved clippings yet</p>
@@ -1121,7 +1440,7 @@ export default function YourTimesDashboard({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {savedClippings.map((item) => (
+                  {safeClippings.map((item) => (
                     <div
                       key={item.id}
                       onClick={() => handleArticleClick(item)}
@@ -1176,7 +1495,7 @@ export default function YourTimesDashboard({
                 </button>
               </div>
 
-              {readingHistory.length === 0 ? (
+              {safeReadingHistory.length === 0 ? (
                 <div className="bg-[#FAF7F0] border border-dashed border-[#1A1A1A]/30 rounded-xl p-8 text-center">
                   <History className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
                   <p className="font-serif text-lg text-[#333333]">No reading history recorded</p>
@@ -1186,7 +1505,7 @@ export default function YourTimesDashboard({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {readingHistory.map((item, idx) => (
+                  {safeReadingHistory.map((item, idx) => (
                     <div
                       key={idx}
                       onClick={() => handleArticleClick(item)}
@@ -1354,7 +1673,7 @@ export default function YourTimesDashboard({
       {/* Customize Interests Modal */}
       {isCustomizeOpen && (
         <div className="fixed inset-0 z-50 bg-[#111111]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-md w-full p-6 shadow-2xl relative">
+          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
             <button
               onClick={() => setIsCustomizeOpen(false)}
               className="absolute top-4 right-4 p-1 rounded hover:bg-[#1A1A1A]/10 cursor-pointer"
@@ -1404,7 +1723,7 @@ export default function YourTimesDashboard({
       {/* Manage Topics Modal */}
       {isManageTopicsOpen && (
         <div className="fixed inset-0 z-50 bg-[#111111]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-md w-full p-6 shadow-2xl relative">
+          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
             <button
               onClick={() => setIsManageTopicsOpen(false)}
               className="absolute top-4 right-4 p-1 rounded hover:bg-[#1A1A1A]/10 cursor-pointer"
@@ -1468,7 +1787,7 @@ export default function YourTimesDashboard({
       {/* User Login Profile Modal */}
       {isLoginOpen && (
         <div className="fixed inset-0 z-50 bg-[#111111]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-sm w-full p-6 shadow-2xl relative text-center">
+          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative text-center">
             <button
               onClick={() => setIsLoginOpen(false)}
               className="absolute top-4 right-4 p-1 rounded hover:bg-[#1A1A1A]/10 cursor-pointer"
@@ -1495,7 +1814,7 @@ export default function YourTimesDashboard({
               </div>
               <div className="flex justify-between py-1 border-b border-[#1A1A1A]/10">
                 <span className="text-[#666666]">Clippings Saved</span>
-                <span className="font-bold text-[#111111]">{savedClippings.length}</span>
+                <span className="font-bold text-[#111111]">{safeClippings.length}</span>
               </div>
             </div>
 

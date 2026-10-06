@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import SmoothScrollProvider from "@/components/SmoothScrollProvider";
 import EditorialCursor from "@/components/EditorialCursor";
 import Masthead from "@/components/Masthead";
@@ -34,6 +35,7 @@ import EditorialAuthScreen from "@/components/EditorialAuthScreen";
 import { allArticles, leadStory } from "@/data/newspaperData";
 
 export default function Home() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const [viewMode, setViewMode] = useState("dashboard"); // "dashboard" | "broadsheet"
@@ -55,12 +57,18 @@ export default function Home() {
           parsed.avatar = null;
           localStorage.setItem("times_user_session", JSON.stringify(parsed));
         }
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentUser(parsed);
       }
     } catch (e) {}
     try {
       const savedClippings = localStorage.getItem("times_clippings");
-      if (savedClippings) setClippings(JSON.parse(savedClippings));
+      if (savedClippings) {
+        const parsed = JSON.parse(savedClippings);
+        if (Array.isArray(parsed)) {
+          setClippings(parsed);
+        }
+      }
     } catch (e) {}
     setIsAuthLoaded(true);
   }, []);
@@ -90,6 +98,7 @@ export default function Home() {
     if (typeof window !== "undefined") {
       const hash = window.location.hash.replace("#", "");
       if (hash) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setViewMode("broadsheet");
         setTimeout(() => {
           if (window.__lenis) {
@@ -257,13 +266,14 @@ export default function Home() {
           onSaveClipping={saveClipping}
           isSaved={isSaved}
           savedClippings={clippings}
+          clippings={clippings}
           onNavigateToBroadsheet={(deskId) => {
             setViewMode("broadsheet");
             if (deskId) {
               setTimeout(() => scrollToDesk(deskId), 300);
             }
           }}
-          onOpenSearchModal={() => setIsSearchOpen(true)}
+          onOpenSearchModal={() => router.push("/search")}
           onUpdateUser={(updatedUser) => {
             setCurrentUser(updatedUser);
             try {
@@ -286,7 +296,7 @@ export default function Home() {
                   setViewMode("auth");
                 }
               }}
-              onOpenSearch={() => setIsSearchOpen(true)}
+              onOpenSearch={() => router.push("/search")}
               onOpenClippings={() => setIsClippingsOpen(true)}
               clippingCount={clippings.length}
               onToggleTheme={cycleTheme}
