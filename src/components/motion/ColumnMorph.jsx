@@ -114,7 +114,7 @@ export default function ColumnMorph({
           {/* Left Column (3 cols) */}
           <div
             ref={leftRef}
-            className="lg:col-span-3 border-r border-[#1A1A1A]/30 pr-4 will-change-transform transform-gpu"
+            className="lg:col-span-3 border-r border-[#766E5F]/30 pr-4 will-change-transform transform-gpu"
           >
             {leftColumn}
           </div>
@@ -130,7 +130,7 @@ export default function ColumnMorph({
           {/* Right Column (3 cols) */}
           <div
             ref={rightRef}
-            className="lg:col-span-3 border-l border-[#1A1A1A]/30 pl-4 will-change-transform transform-gpu"
+            className="lg:col-span-3 border-l border-[#766E5F]/30 pl-4 will-change-transform transform-gpu"
           >
             {rightColumn}
           </div>

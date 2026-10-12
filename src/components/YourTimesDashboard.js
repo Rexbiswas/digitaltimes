@@ -31,7 +31,8 @@ import {
   Layers,
   ArrowRight,
   Camera,
-  Trash2
+  Trash2,
+  Play,
 } from "lucide-react";
 import { dashboardRecommendedStories, breakingHeadlines } from "@/data/newspaperData";
 import CalendarDateSelector from "./CalendarDateSelector";
@@ -143,23 +144,15 @@ export default function YourTimesDashboard({
   // Active Category Pill Filter (Default: "AI" as in user screenshot)
   const [activeCategory, setActiveCategory] = useState("ALL");
 
-  // Calendar Date Selector State (e.g. "2026-10-05" for today, or null for all dates)
-  const [selectedDate, setSelectedDate] = useState("2026-10-05");
+  // Calendar Date Selector State (null for Live Updated News by default, or specific date string for archives)
+  const [selectedDate, setSelectedDate] = useState(null);
 
   // Sorting and Additional Filtering State
   const [sortBy, setSortBy] = useState("latest"); // "latest", "quickest", "indepth", "alphabetical", "desk"
   const [readTimeFilter, setReadTimeFilter] = useState("all"); // "all", "short", "long"
   const [savedOnlyFilter, setSavedOnlyFilter] = useState(false);
-
-  const availableDates = [
-    "2026-10-05",
-    "2026-10-04",
-    "2026-10-03",
-    "2026-10-02",
-    "2026-10-01",
-    "2026-09-30",
-    "2026-09-29"
-  ];
+  // Edition Scope filter: "all" (Updated News First, then Previous News), "updated" (Updated Only), "previous" (Previous Only)
+  const [editionScope, setEditionScope] = useState("all");
 
   // Navigation Sidebar Active Tab
   const [activeTab, setActiveTab] = useState("yourtimes"); // "home", "yourtimes", "bookmarks", "history", "following", "notifications", "settings"
@@ -247,18 +240,68 @@ export default function YourTimesDashboard({
   }, []);
 
 
-  // Load history from localStorage
+  const { toast } = useToast();
+
+  // Load Reading History from API (with localStorage fallback)
   useEffect(() => {
-    try {
-      const savedHistory = localStorage.getItem("times_reading_history");
-      if (savedHistory) {
-        const parsed = JSON.parse(savedHistory);
-        if (Array.isArray(parsed)) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setReadingHistory(parsed);
+    let isMounted = true;
+    const fetchHistory = async () => {
+      const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+      try {
+        const res = await fetch("/api/users/history?limit=50", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.success && Array.isArray(json.data) && json.data.length > 0) {
+            setReadingHistory(json.data);
+            return;
+          }
         }
-      }
-    } catch (e) {}
+      } catch (err) {}
+
+      // Fallback to localStorage
+      try {
+        const savedHistory = localStorage.getItem("times_reading_history");
+        if (savedHistory && isMounted) {
+          const parsed = JSON.parse(savedHistory);
+          if (Array.isArray(parsed)) {
+            setReadingHistory(parsed);
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchHistory();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Load live notifications from API
+  useEffect(() => {
+    let isMounted = true;
+    const fetchNotifications = async () => {
+      const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+      try {
+        const res = await fetch("/api/notifications?limit=50", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.success && Array.isArray(json.data) && json.data.length > 0) {
+            setLiveNotifications(json.data);
+          }
+        }
+      } catch (err) {}
+    };
+
+    fetchNotifications();
+    const timer = setInterval(fetchNotifications, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
   }, []);
 
   const safeReadingHistory = Array.isArray(readingHistory) ? readingHistory : [];
@@ -266,27 +309,283 @@ export default function YourTimesDashboard({
   const handleArticleClick = (story) => {
     if (!story) return;
     const currentHist = Array.isArray(readingHistory) ? readingHistory : [];
-    // Add to reading history
+    const storyId = story.id || story._id || story.articleCustomId;
     const updatedHistory = [
       story,
-      ...currentHist.filter((item) => item?.id !== story.id)
-    ].slice(0, 20);
+      ...currentHist.filter((item) => (item?.id || item?._id || item?.articleCustomId) !== storyId)
+    ].slice(0, 30);
     setReadingHistory(updatedHistory);
     try {
       localStorage.setItem("times_reading_history", JSON.stringify(updatedHistory));
     } catch (e) {}
 
+    // Async record to backend reading history API
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    fetch("/api/users/history", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        articleId: storyId,
+        headline: story.headline || story.title,
+        deck: story.deck || story.description,
+        desk: story.desk,
+        author: story.author,
+        readTime: story.readTime,
+        image: story.image,
+        readPercentage: 100,
+        readDurationSeconds: 25,
+      }),
+    }).catch(() => {});
+
+    toast?.history?.(story);
     onOpenArticle?.(story);
   };
 
+  const handleRemoveHistoryItem = async (e, item) => {
+    e.stopPropagation();
+    const itemId = item.id || item._id || item.articleCustomId;
+    setReadingHistory((prev) =>
+      prev.filter((h) => (h.id || h._id || h.articleCustomId) !== itemId)
+    );
+    try {
+      const current = JSON.parse(localStorage.getItem("times_reading_history") || "[]");
+      const filtered = current.filter((h) => (h.id || h._id) !== itemId);
+      localStorage.setItem("times_reading_history", JSON.stringify(filtered));
+    } catch (err) {}
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    try {
+      await fetch(`/api/users/history?articleId=${encodeURIComponent(itemId)}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch (err) {}
+
+    toast?.success?.("Record Removed", "Article removed from your reading history.");
+  };
+
+  const handleClearAllHistory = async () => {
+    setReadingHistory([]);
+    try {
+      localStorage.removeItem("times_reading_history");
+    } catch (e) {}
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    try {
+      await fetch("/api/users/history", {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch (err) {}
+
+    toast?.success?.("History Cleared", "All reading history has been cleared from your archives.");
+  };
+
+  const handleMarkNotificationRead = async (e, notif) => {
+    e?.stopPropagation?.();
+    const id = notif._id || notif.id;
+    setLiveNotifications((prev) =>
+      prev.map((n) => ((n._id || n.id) === id ? { ...n, read: true, unread: false } : n))
+    );
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    try {
+      await fetch(`/api/notifications/${id}`, {
+        method: "PATCH",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch (err) {}
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setLiveNotifications((prev) =>
+      prev.map((n) => ({ ...n, read: true, unread: false }))
+    );
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    try {
+      await fetch("/api/notifications/mark-all-read", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch (err) {}
+    toast?.success?.("Notifications Cleared", "All dispatches marked as read.");
+  };
+
+  const handleDismissNotification = async (e, notif) => {
+    e?.stopPropagation?.();
+    const id = notif._id || notif.id;
+    setLiveNotifications((prev) => prev.filter((n) => (n._id || n.id) !== id));
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    try {
+      await fetch(`/api/notifications/${id}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch (err) {}
+    toast?.success?.("Notification Dismissed", "Alert removed from your feed.");
+  };
+
+  const handleOpenNotificationStory = (notif) => {
+    handleMarkNotificationRead(null, notif);
+    const story = notif.story || {
+      id: notif.articleId || notif.id,
+      headline: notif.title,
+      deck: notif.message,
+      desk: notif.desk,
+    };
+    handleArticleClick(story);
+  };
+
+  // Live stories loaded dynamically from NewsAPI / backend server
+  const [liveStories, setLiveStories] = useState(dashboardRecommendedStories);
+  const [isSyncingWire, setIsSyncingWire] = useState(false);
+  const [wireError, setWireError] = useState(null);
+
+  // Helper to map API article into broadsheet story format
+  const mapApiArticle = (item, idx) => ({
+    id: item._id || item.id || `live-${idx}`,
+    headline: item.headline || item.title,
+    desk: (item.desk || item.category || "TECHNOLOGY").toUpperCase(),
+    minutesAgo: Math.max(
+      1,
+      Math.floor((Date.now() - new Date(item.publishedAt || Date.now()).getTime()) / 60000)
+    ),
+    image: item.urlToImage || item.image || "/window.svg",
+    urlToImage: item.urlToImage || item.image || "/window.svg",
+    author:
+      item.author ||
+      (item.sourceName ? `By ${item.sourceName.toUpperCase()}` : "By THE DIGITAL TIMES WIRE"),
+    readTime: item.readTime || "4 MIN READ",
+    date: item.publishedAt
+      ? new Date(item.publishedAt)
+          .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+          .toUpperCase()
+      : "TODAY",
+    dateIso:
+      item.editionDate ||
+      (item.publishedAt ? item.publishedAt.split("T")[0] : new Date().toISOString().split("T")[0]),
+    topic: item.category || item.desk || "Technology",
+    deck: item.deck || item.description || item.headline,
+    leadParagraph: item.leadParagraph || item.deck || item.headline,
+    bodyParagraphs:
+      Array.isArray(item.bodyParagraphs) && item.bodyParagraphs.length > 0
+        ? item.bodyParagraphs
+        : [item.leadParagraph || item.deck || item.headline],
+    video: item.video || null,
+    videoCaption: item.videoCaption || null,
+    videoType: item.videoType || "embed",
+    imageCaption: item.imageCaption || null,
+    imageCredit: item.imageCredit || null,
+  });
+
+  const loadLiveArticles = async (isBackground = false) => {
+    if (isBackground) {
+      setIsSyncingWire(true);
+    }
+    setWireError(null);
+
+    try {
+      const res = await fetch("/api/articles?limit=50", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`Wire status: HTTP ${res.status}`);
+      }
+      const json = await res.json();
+      if (json.articles && json.articles.length > 0) {
+        const mapped = json.articles.map(mapApiArticle);
+        const seen = new Set();
+        const combined = [];
+        for (const s of [...mapped, ...dashboardRecommendedStories]) {
+          const key = s.headline?.toLowerCase().trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            combined.push(s);
+          }
+        }
+        setLiveStories(combined);
+      }
+    } catch (err) {
+      console.warn("Could not load live articles:", err);
+      if (liveStories.length === 0) {
+        setWireError("Telegraph transmission failed to receive incoming dispatches.");
+      }
+    } finally {
+      setIsSyncingWire(false);
+    }
+  };
+
+  // Automatic background wire synchronization (on mount and every 60s)
+  useEffect(() => {
+    let isMounted = true;
+    const autoSyncWire = async () => {
+      try {
+        await loadLiveArticles(true);
+        await fetch("http://localhost:5000/api/admin/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }).catch(() => {});
+        if (isMounted) {
+          await loadLiveArticles(true);
+        }
+      } catch (e) {}
+    };
+
+    autoSyncWire();
+    const interval = setInterval(autoSyncWire, 60000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Category pills for the "YOUR TIMES" tab
   const categoryPills = ["All", "AI", "Web", "Startups", "Security", "Design", "Gaming"];
 
-  // Selected date human-readable label
-  const selectedDateLabel = useMemo(() => {
-    if (!selectedDate) return "ALL EDITIONS";
-    const parts = selectedDate.split("-");
+  // Available dates for edition selection: dynamically extracted from stories and real-time dates
+  const availableDates = useMemo(() => {
+    const set = new Set();
+
+    // Dynamically collect unique edition dates from all current stories
+    if (Array.isArray(liveStories)) {
+      liveStories.forEach((s) => {
+        if (s.dateIso && /^\d{4}-\d{2}-\d{2}$/.test(s.dateIso)) {
+          set.add(s.dateIso);
+        } else if (s.publishedAt) {
+          const iso = new Date(s.publishedAt).toISOString().split("T")[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+            set.add(iso);
+          }
+        }
+      });
+    }
+
+    // Fallback: if no stories present, dynamically generate the past 7 calendar days
+    if (set.size === 0) {
+      const now = new Date();
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        set.add(d.toISOString().split("T")[0]);
+      }
+    }
+
+    // Sort descending (most recent edition date first)
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [liveStories]);
+
+  // Latest date available in the active edition pool (dynamically resolved)
+  const latestEditionDate = useMemo(() => {
+    if (availableDates && availableDates.length > 0) {
+      return availableDates[0];
+    }
+    return new Date().toISOString().split("T")[0];
+  }, [availableDates]);
+
+  // Format date helper for section headers
+  const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return "UPDATED NEWS";
+    const parts = dateStr.split("-");
     if (parts.length === 3) {
       const monthNames = [
         "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
@@ -295,17 +594,43 @@ export default function YourTimesDashboard({
       const m = monthNames[parseInt(parts[1], 10) - 1];
       const d = parseInt(parts[2], 10);
       const y = parts[0];
-      if (selectedDate === "2026-10-05") {
-        return `TODAY • ${m} ${d}, ${y}`;
-      }
       return `${m} ${d}, ${y}`;
     }
-    return selectedDate;
+    return dateStr;
+  };
+
+  // Selected date human-readable label: returns "UPDATED NEWS" when live, or formatted archive date
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDate || selectedDate === "latest") return "UPDATED NEWS";
+    return formatDisplayDate(selectedDate);
   }, [selectedDate]);
+
+  // Calculate reliable absolute chronological timestamp for any story
+  const getStoryTimestamp = (s) => {
+    if (!s) return 0;
+    if (s.publishedAt) {
+      const t = new Date(s.publishedAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (s.dateIso && /^\d{4}-\d{2}-\d{2}$/.test(s.dateIso)) {
+      const parts = s.dateIso.split("-");
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const base = new Date(Date.UTC(year, month, day, 23, 59, 59)).getTime();
+      const mins = typeof s.minutesAgo === "number" ? s.minutesAgo : 0;
+      return base - (mins * 60000);
+    }
+    if (s.date && typeof s.date === "string") {
+      const parsed = Date.parse(s.date);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return 0;
+  };
 
   // Filter & sort recommended stories by selected calendar edition date, category, filters, and sort order
   const filteredStories = useMemo(() => {
-    let pool = [...dashboardRecommendedStories];
+    let pool = [...liveStories];
 
     // 1. Filter by selected date
     if (selectedDate) {
@@ -313,23 +638,15 @@ export default function YourTimesDashboard({
       if (matchingDate.length > 0) {
         pool = matchingDate;
       } else {
-        // If user selected an archival date without pre-defined recommended story:
-        const parts = selectedDate.split("-");
-        const monthNames = [
-          "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-          "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
-        ];
-        const dateDisplay = parts.length === 3
-          ? `${monthNames[parseInt(parts[1], 10) - 1]} ${parseInt(parts[2], 10)}, ${parts[0]}`
-          : selectedDate;
-
+        const dateDisplay = formatDisplayDate(selectedDate);
         pool = [
           {
             id: `archive-${selectedDate}-dispatch`,
             headline: `Archival Wire Dispatch: Historical Broadsheet Edition for ${dateDisplay}`,
-            desk: activeCategory === "All" ? "AI" : activeCategory,
+            desk: activeCategory && activeCategory.toLowerCase() !== "all" ? activeCategory : "AI",
             minutesAgo: 60,
-            image: "/images/hero_editorial.jpg",
+            image: "/window.svg",
+            urlToImage: "/window.svg",
             author: "By EDITORIAL ARCHIVE BUREAU",
             readTime: "4 MIN READ",
             date: dateDisplay,
@@ -342,13 +659,13 @@ export default function YourTimesDashboard({
               "Readers can review the recorded findings or jump back to today's live breaking coverage."
             ]
           },
-          ...dashboardRecommendedStories.slice(0, 2)
+          ...liveStories.slice(0, 2)
         ];
       }
     }
 
     // 2. Filter by active category
-    if (activeCategory !== "All") {
+    if (activeCategory && activeCategory.toLowerCase() !== "all") {
       const byCategory = pool.filter((s) => s.desk?.toLowerCase() === activeCategory.toLowerCase());
       if (byCategory.length > 0) {
         pool = byCategory;
@@ -373,10 +690,13 @@ export default function YourTimesDashboard({
       pool = pool.filter((s) => checkIsSaved(s.id));
     }
 
-    // 5. Apply sorting
+    // 5. Apply sorting (Chronological: Updated news first, then previous news)
     const sorted = [...pool].sort((a, b) => {
       if (sortBy === "latest") {
-        return (a.minutesAgo || 10) - (b.minutesAgo || 10);
+        const tsA = getStoryTimestamp(a);
+        const tsB = getStoryTimestamp(b);
+        if (tsA !== tsB) return tsB - tsA; // Newest / updated first
+        return (a.minutesAgo || 0) - (b.minutesAgo || 0);
       }
       if (sortBy === "quickest") {
         const aMins = parseInt(a.readTime, 10) || 5;
@@ -398,7 +718,28 @@ export default function YourTimesDashboard({
     });
 
     return sorted;
-  }, [selectedDate, activeCategory, readTimeFilter, savedOnlyFilter, sortBy, safeClippings, isSaved]);
+  }, [selectedDate, activeCategory, readTimeFilter, savedOnlyFilter, sortBy, safeClippings, isSaved, liveStories]);
+
+  // Partition filtered stories into Updated News (today / latest edition) and Previous News (earlier editions)
+  const { updatedNewsStories, previousNewsStories } = useMemo(() => {
+    if (selectedDate) {
+      return { updatedNewsStories: filteredStories, previousNewsStories: [] };
+    }
+
+    const updated = [];
+    const previous = [];
+
+    filteredStories.forEach((s) => {
+      const isLatest = s.dateIso === latestEditionDate || s.date === "TODAY";
+      if (isLatest) {
+        updated.push(s);
+      } else {
+        previous.push(s);
+      }
+    });
+
+    return { updatedNewsStories: updated, previousNewsStories: previous };
+  }, [filteredStories, selectedDate, latestEditionDate]);
 
   // Stories to show in Recommended section
   const recommendedCards =
@@ -441,14 +782,14 @@ export default function YourTimesDashboard({
   };
 
   return (
-    <div className="min-h-screen md:h-screen md:overflow-hidden bg-[#F2EEE5] text-[#111111] font-sans antialiased selection:bg-[#111111] selection:text-[#F2EEE5] flex flex-col">
-      <header className="w-full bg-[#F2EEE5] border-b border-[#1A1A1A] select-none shrink-0 z-40 shadow-xs">
+    <div className="min-h-screen md:h-screen md:overflow-hidden bg-[#E8DFC8] text-[#201E19] font-sans antialiased selection:bg-[#201E19] selection:text-[#E8DFC8] flex flex-col">
+      <header className="w-full bg-[#E8DFC8] border-b border-[#766E5F] select-none shrink-0 z-40 shadow-xs">
         {/* Mobile & Small Tablet Header (< md): Clean 2-row editorial layout with uncompromised centered Masthead */}
         <div className="md:hidden px-3 pt-2 pb-1.5 flex flex-col gap-1.5">
           {/* Row 1: Live Badge & Date Selector on Left | Search & Profile on Right */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 shrink-0">
-              <div className="bg-[#A71919] text-[#F2EEE5] text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+              <div className="bg-[#9F3028] text-[#E8DFC8] text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                 <span>LIVE</span>
               </div>
@@ -463,11 +804,11 @@ export default function YourTimesDashboard({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => onOpenSearchModal && onOpenSearchModal()}
-                className="p-1.5 text-[#111111] hover:bg-[#E4DDD0] rounded-full transition-colors cursor-pointer flex items-center justify-center"
+                className="p-1.5 text-[#201E19] hover:bg-[#D7CCB2] rounded-full transition-colors cursor-pointer flex items-center justify-center"
                 title="Search"
                 aria-label="Search"
               >
-                <Search className="w-4 h-4 text-[#111111]" />
+                <Search className="w-4 h-4 text-[#201E19]" />
               </button>
 
               <button
@@ -476,19 +817,19 @@ export default function YourTimesDashboard({
                 aria-label={`Profile: ${currentUser.name}`}
                 title={currentUser.name}
               >
-                <div className="w-7 h-7 rounded-full border border-[#1A1A1A] ring-1 ring-[#C5A059]/40 bg-[#111111] flex items-center justify-center text-[#F2EEE5] select-none shadow-xs">
+                <div className="w-7 h-7 rounded-full border border-[#766E5F] ring-1 ring-[#C5A059]/40 bg-[#201E19] flex items-center justify-center text-[#E8DFC8] select-none shadow-xs">
                   <span className="text-[10px] font-serif font-bold tracking-wider">
                     {getInitials(currentUser.name)}
                   </span>
                 </div>
-                <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-[#F2EEE5]" />
+                <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-[#E8DFC8]" />
               </button>
             </div>
           </div>
 
           {/* Row 2: Grand Masthead Centered & Never Truncated */}
-          <div className="text-center cursor-pointer border-t border-[#1A1A1A]/10 pt-1" onClick={() => setActiveTab("yourtimes")}>
-            <h1 className="font-masthead text-2xl xs:text-3xl text-[#111111] font-normal select-none hover:opacity-90 transition-opacity leading-none tracking-tight">
+          <div className="text-center cursor-pointer border-t border-[#766E5F]/10 pt-1" onClick={() => setActiveTab("yourtimes")}>
+            <h1 className="font-masthead text-2xl xs:text-3xl text-[#201E19] font-normal select-none hover:opacity-90 transition-opacity leading-none tracking-tight">
               The Digital Times
             </h1>
           </div>
@@ -498,7 +839,7 @@ export default function YourTimesDashboard({
         <div className="hidden md:flex max-w-[1440px] mx-auto px-6 py-2.5 items-center justify-between gap-4">
           {/* Left Brand Badge & Calendar Date Selector */}
           <div className="flex items-center gap-2.5 shrink-0">
-            <div className="bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+            <div className="bg-[#9F3028] text-[#E8DFC8] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               <span>LIVE</span>
             </div>
@@ -509,11 +850,12 @@ export default function YourTimesDashboard({
               onSelectDate={setSelectedDate}
               availableDates={availableDates}
             />
+
           </div>
 
           {/* Center Grand Masthead Title */}
           <div className="text-center cursor-pointer min-w-0" onClick={() => setActiveTab("yourtimes")}>
-            <h1 className="font-masthead text-2xl md:text-3xl lg:text-4xl text-[#111111] font-normal select-none hover:opacity-90 transition-opacity leading-none">
+            <h1 className="font-masthead text-2xl md:text-3xl lg:text-4xl text-[#201E19] font-normal select-none hover:opacity-90 transition-opacity leading-none">
               The Digital Times
             </h1>
           </div>
@@ -523,11 +865,11 @@ export default function YourTimesDashboard({
             {/* Search Icon Button */}
             <button
               onClick={() => onOpenSearchModal && onOpenSearchModal()}
-              className="p-2 text-[#111111] hover:bg-[#E4DDD0] rounded-full transition-colors cursor-pointer flex items-center justify-center"
+              className="p-2 text-[#201E19] hover:bg-[#D7CCB2] rounded-full transition-colors cursor-pointer flex items-center justify-center"
               title="Search"
               aria-label="Search"
             >
-              <Search className="w-5 h-5 text-[#111111]" />
+              <Search className="w-5 h-5 text-[#201E19]" />
             </button>
 
             {/* Profile Avatar Button (Avatar only) */}
@@ -537,12 +879,12 @@ export default function YourTimesDashboard({
               aria-label={`Profile: ${currentUser.name}`}
               title={currentUser.name}
             >
-              <div className="w-8 h-8 lg:w-9 lg:h-9 rounded-full border-2 border-[#1A1A1A] ring-1 ring-[#C5A059]/40 bg-[#111111] flex items-center justify-center text-[#F2EEE5] group-hover:bg-[#2A2A2A] transition-colors select-none shadow-xs">
+              <div className="w-8 h-8 lg:w-9 lg:h-9 rounded-full border-2 border-[#766E5F] ring-1 ring-[#C5A059]/40 bg-[#201E19] flex items-center justify-center text-[#E8DFC8] group-hover:bg-[#2A2A2A] transition-colors select-none shadow-xs">
                 <span className="text-xs font-serif font-bold tracking-wider">
                   {getInitials(currentUser.name)}
                 </span>
               </div>
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#F2EEE5]" />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#E8DFC8]" />
             </button>
           </div>
         </div>
@@ -565,8 +907,8 @@ export default function YourTimesDashboard({
                   onClick={() => setActiveTab("yourtimes")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "yourtimes"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <Newspaper className="w-3.5 h-3.5" />
@@ -581,8 +923,8 @@ export default function YourTimesDashboard({
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "home"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <Home className="w-3.5 h-3.5" />
@@ -593,14 +935,14 @@ export default function YourTimesDashboard({
                   onClick={() => setActiveTab("bookmarks")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "bookmarks"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <Bookmark className="w-3.5 h-3.5" />
                   <span>Bookmarks</span>
                   {safeClippings.length > 0 && (
-                    <span className="bg-[#A71919] text-[#F2EEE5] text-[9px] font-bold px-1.5 rounded-full">
+                    <span className="bg-[#9F3028] text-[#E8DFC8] text-[9px] font-bold px-1.5 rounded-full">
                       {safeClippings.length}
                     </span>
                   )}
@@ -610,8 +952,8 @@ export default function YourTimesDashboard({
                   onClick={() => setActiveTab("history")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "history"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <History className="w-3.5 h-3.5" />
@@ -625,8 +967,8 @@ export default function YourTimesDashboard({
                   onClick={() => setActiveTab("following")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "following"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
@@ -637,14 +979,14 @@ export default function YourTimesDashboard({
                   onClick={() => setActiveTab("notifications")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "notifications"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <Bell className="w-3.5 h-3.5" />
                   <span>Alerts</span>
                   {liveNotifications.filter((n) => n.unread).length > 0 && (
-                    <span className="bg-[#A71919] text-[#F2EEE5] text-[9px] font-bold px-1.5 rounded-full">
+                    <span className="bg-[#9F3028] text-[#E8DFC8] text-[9px] font-bold px-1.5 rounded-full">
                       {liveNotifications.filter((n) => n.unread).length}
                     </span>
                   )}
@@ -654,8 +996,8 @@ export default function YourTimesDashboard({
                   onClick={() => setActiveTab("settings")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "settings"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "bg-[#FAF7F0] border border-[#1A1A1A]/20 text-[#333333] hover:bg-[#EAE4D6]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "bg-[#EFE8D5] border border-[#766E5F]/20 text-[#39352D] hover:bg-[#EAE4D6]"
                   }`}
                 >
                   <Settings className="w-3.5 h-3.5" />
@@ -666,27 +1008,27 @@ export default function YourTimesDashboard({
 
             {/* Desktop Navigation: COLLAPSED MODE (Single Unified Dock Capsule) */}
             {isSidebarCollapsed ? (
-              <div className="hidden md:flex flex-col items-center gap-1.5 bg-[#FAF7F0] border border-[#1A1A1A]/15 rounded-2xl p-2 shadow-[0_4px_20px_rgba(0,0,0,0.03)] select-none">
+              <div className="hidden md:flex flex-col items-center gap-1.5 bg-[#EFE8D5] border border-[#766E5F]/15 rounded-2xl p-2 shadow-[0_4px_20px_rgba(0,0,0,0.03)] select-none">
                 {/* 1. Avatar with Initials / Photo (Click to expand side panel) */}
                 <div
                   onClick={() => setSidebarCollapsedAndSave(false)}
                   className="relative w-10 h-10 shrink-0 cursor-pointer group shadow-xs"
                   aria-label="Expand side panel (Ctrl+B)"
                 >
-                  <div className="w-full h-full rounded-full overflow-hidden border-2 border-[#1A1A1A] ring-2 ring-[#C5A059]/30 ring-offset-2 ring-offset-[#FAF7F0] bg-[#111111] relative flex items-center justify-center">
-                    <span className="font-serif font-bold text-xs text-[#F2EEE5] select-none tracking-wider">
+                  <div className="w-full h-full rounded-full overflow-hidden border-2 border-[#766E5F] ring-2 ring-[#C5A059]/30 ring-offset-2 ring-offset-[#EFE8D5] bg-[#201E19] relative flex items-center justify-center">
+                    <span className="font-serif font-bold text-xs text-[#E8DFC8] select-none tracking-wider">
                       {getInitials(currentUser.name)}
                     </span>
                   </div>
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Expand Side Panel</span>
                     <span className="text-[10px] font-mono text-[#999999] bg-[#222222] px-1.5 py-0.5 rounded">Ctrl+B</span>
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </div>
 
                 {/* Hairline Divider */}
-                <div className="w-6 h-[1px] bg-[#1A1A1A]/15 my-0.5" />
+                <div className="w-6 h-[1px] bg-[#766E5F]/15 my-0.5" />
 
                 {/* 2. Navigation Icon Stack */}
                 {/* Home */}
@@ -698,15 +1040,15 @@ export default function YourTimesDashboard({
                   aria-label="Home Broadsheet (Front Page)"
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "home"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <Home className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Home Broadsheet</span>
                     <span className="text-[10px] font-mono opacity-70 bg-[#333333] px-1.5 py-0.5 rounded">Front Page</span>
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
@@ -716,16 +1058,16 @@ export default function YourTimesDashboard({
                   aria-label="Your Times Feed"
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "yourtimes"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <Newspaper className="w-4 h-4 transition-transform group-hover:scale-110" />
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-400" />
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Your Times Feed</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
@@ -735,22 +1077,22 @@ export default function YourTimesDashboard({
                   aria-label={`Bookmarks (${safeClippings.length})`}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "bookmarks"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <Bookmark className="w-4 h-4 transition-transform group-hover:scale-110" />
                   {safeClippings.length > 0 && (
-                    <span className="absolute top-1 right-1 bg-[#A71919] text-[#F2EEE5] text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                    <span className="absolute top-1 right-1 bg-[#9F3028] text-[#E8DFC8] text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
                       {safeClippings.length}
                     </span>
                   )}
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Bookmarks</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#A71919] text-[#F2EEE5]">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#9F3028] text-[#E8DFC8]">
                       {safeClippings.length} saved
                     </span>
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
@@ -760,20 +1102,20 @@ export default function YourTimesDashboard({
                   aria-label={`Reading History (${safeReadingHistory.length})`}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "history"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <History className="w-4 h-4 transition-transform group-hover:scale-110" />
                   {safeReadingHistory.length > 0 && (
-                    <span className="absolute top-1 right-1 text-[8px] font-mono bg-[#1A1A1A]/20 text-[#111111] w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                    <span className="absolute top-1 right-1 text-[8px] font-mono bg-[#766E5F]/20 text-[#201E19] w-3.5 h-3.5 rounded-full flex items-center justify-center">
                       {safeReadingHistory.length}
                     </span>
                   )}
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Reading History</span>
                     <span className="text-[10px] font-mono text-[#999999]">{safeReadingHistory.length} read</span>
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
@@ -783,15 +1125,15 @@ export default function YourTimesDashboard({
                   aria-label="Following"
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "following"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <Users className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Following</span>
                     <span className="text-[10px] font-mono text-[#999999]">Topics & Authors</span>
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
@@ -801,24 +1143,24 @@ export default function YourTimesDashboard({
                   aria-label={`Notifications (${liveNotifications.filter((n) => n.unread).length})`}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "notifications"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <Bell className="w-4 h-4 transition-transform group-hover:scale-110" />
                   {liveNotifications.filter((n) => n.unread).length > 0 && (
-                    <span className="absolute top-1 right-1 bg-[#A71919] text-[#F2EEE5] text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center animate-pulse">
+                    <span className="absolute top-1 right-1 bg-[#9F3028] text-[#E8DFC8] text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center animate-pulse">
                       {liveNotifications.filter((n) => n.unread).length}
                     </span>
                   )}
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Live Alerts</span>
                     {liveNotifications.filter((n) => n.unread).length > 0 && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#A71919] text-[#F2EEE5]">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#9F3028] text-[#E8DFC8]">
                         {liveNotifications.filter((n) => n.unread).length} new
                       </span>
                     )}
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
@@ -828,20 +1170,20 @@ export default function YourTimesDashboard({
                   aria-label="Settings"
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "settings"
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "text-[#555555] hover:bg-[#1A1A1A]/10 hover:text-[#111111]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "text-[#39352D] hover:bg-[#766E5F]/10 hover:text-[#201E19]"
                   }`}
                 >
                   <Settings className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Preferences</span>
                     <span className="text-[10px] font-mono text-[#999999]">Account & Topics</span>
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </button>
 
                 {/* Hairline Divider */}
-                <div className="w-6 h-[1px] bg-[#1A1A1A]/15 my-0.5" />
+                <div className="w-6 h-[1px] bg-[#766E5F]/15 my-0.5" />
 
                 {/* Live Beacon Indicator */}
                 <div className="py-1 relative group cursor-default" aria-label="Real-time newsroom feed active">
@@ -849,10 +1191,10 @@ export default function YourTimesDashboard({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
-                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                  <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Newsroom Live</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                   </div>
                 </div>
               </div>
@@ -860,22 +1202,22 @@ export default function YourTimesDashboard({
               /* Desktop Navigation: EXPANDED MODE (Luxury Broadsheet Architecture) */
               <div className="hidden md:flex flex-col gap-3">
                 {/* 1. User Profile Card */}
-                <div className="bg-[#FAF7F0] border border-[#1A1A1A]/15 rounded-2xl p-3.5 flex items-center gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.03)] relative">
+                <div className="bg-[#EFE8D5] border border-[#766E5F]/15 rounded-2xl p-3.5 flex items-center gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.03)] relative">
                   {/* Avatar (Click to collapse side panel) */}
                   <div
                     onClick={() => setSidebarCollapsedAndSave(true)}
                     className="relative w-11 h-11 shrink-0 cursor-pointer group shadow-xs"
                     aria-label="Collapse side panel (Ctrl+B)"
                   >
-                    <div className="w-full h-full rounded-full overflow-hidden border-2 border-[#1A1A1A] ring-2 ring-[#C5A059]/30 ring-offset-2 ring-offset-[#FAF7F0] bg-[#111111] relative flex items-center justify-center">
-                      <span className="font-serif font-bold text-sm text-[#F2EEE5] select-none tracking-wider">
+                    <div className="w-full h-full rounded-full overflow-hidden border-2 border-[#766E5F] ring-2 ring-[#C5A059]/30 ring-offset-2 ring-offset-[#EFE8D5] bg-[#201E19] relative flex items-center justify-center">
+                      <span className="font-serif font-bold text-sm text-[#E8DFC8] select-none tracking-wider">
                         {getInitials(currentUser.name)}
                       </span>
                     </div>
-                    <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#111111] text-[#F2EEE5] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
+                    <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                       <span className="font-semibold">Collapse Side Panel</span>
                       <span className="text-[10px] font-mono text-[#999999] bg-[#222222] px-1.5 py-0.5 rounded">Ctrl+B</span>
-                      <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+                      <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
                     </div>
                   </div>
 
@@ -884,7 +1226,7 @@ export default function YourTimesDashboard({
                     <span className="text-[10px] text-[#666666] block leading-tight font-serif italic">
                       Welcome back,
                     </span>
-                    <h2 className="font-serif font-bold text-sm text-[#111111] leading-tight truncate">
+                    <h2 className="font-serif font-bold text-sm text-[#201E19] leading-tight truncate">
                       {currentUser.name}
                     </h2>
                     <span className="text-[10px] text-[#777777] font-mono truncate block">
@@ -899,7 +1241,7 @@ export default function YourTimesDashboard({
                 </div>
 
                 {/* 2. Navigation Menu Dock */}
-                <nav className="flex flex-col gap-1.5 bg-[#FAF7F0] border border-[#1A1A1A]/15 rounded-2xl p-2 shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-sm font-medium">
+                <nav className="flex flex-col gap-1.5 bg-[#EFE8D5] border border-[#766E5F]/15 rounded-2xl p-2 shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-sm font-medium">
                   {/* Home */}
                   <button
                     onClick={() => {
@@ -909,13 +1251,13 @@ export default function YourTimesDashboard({
                     title="Home (Broadsheet Edition)"
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "home"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <Home className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
                     <span className="truncate">Home</span>
-                    <span className="ml-auto text-[10px] font-mono opacity-70 bg-[#1A1A1A]/10 px-1.5 py-0.5 rounded text-[#111111]">
+                    <span className="ml-auto text-[10px] font-mono opacity-70 bg-[#766E5F]/10 px-1.5 py-0.5 rounded text-[#201E19]">
                       Broadsheet
                     </span>
                   </button>
@@ -926,8 +1268,8 @@ export default function YourTimesDashboard({
                     title="Your Times Feed"
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "yourtimes"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <Newspaper className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
@@ -946,14 +1288,14 @@ export default function YourTimesDashboard({
                     title={`Bookmarks (${safeClippings.length})`}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "bookmarks"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <Bookmark className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
                     <span className="truncate">Bookmarks</span>
                     {safeClippings.length > 0 && (
-                      <span className="ml-auto bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                      <span className="ml-auto bg-[#9F3028] text-[#E8DFC8] text-[10px] font-bold px-1.5 py-0.2 rounded-full">
                         {safeClippings.length}
                       </span>
                     )}
@@ -965,8 +1307,8 @@ export default function YourTimesDashboard({
                     title={`Reading History (${safeReadingHistory.length})`}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "history"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <History className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
@@ -984,8 +1326,8 @@ export default function YourTimesDashboard({
                     title="Following"
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "following"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <Users className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
@@ -998,14 +1340,14 @@ export default function YourTimesDashboard({
                     title={`Notifications (${liveNotifications.filter((n) => n.unread).length})`}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "notifications"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <Bell className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
                     <span className="truncate">Notifications</span>
                     {liveNotifications.filter((n) => n.unread).length > 0 && (
-                      <span className="ml-auto bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse">
+                      <span className="ml-auto bg-[#9F3028] text-[#E8DFC8] text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse">
                         {liveNotifications.filter((n) => n.unread).length}
                       </span>
                     )}
@@ -1017,8 +1359,8 @@ export default function YourTimesDashboard({
                     title="Settings"
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "settings"
-                        ? "bg-[#111111] text-[#F2EEE5] font-semibold shadow-md shadow-black/10 scale-[1.01]"
-                        : "text-[#444444] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                        ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
+                        : "text-[#39352D] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                     }`}
                   >
                     <Settings className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
@@ -1027,7 +1369,7 @@ export default function YourTimesDashboard({
                 </nav>
 
                 {/* 3. Bottom Telemetry */}
-                <div className="px-3 py-2 border-t border-[#1A1A1A]/10 text-[10px] font-mono text-[#777777] flex items-center justify-between select-none">
+                <div className="px-3 py-2 border-t border-[#766E5F]/10 text-[10px] font-mono text-[#777777] flex items-center justify-between select-none">
                   <span className="flex items-center gap-1.5">
                     <span className="relative flex h-1.5 w-1.5">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1048,9 +1390,9 @@ export default function YourTimesDashboard({
           {activeTab === "yourtimes" && (
             <>
               {/* Header: Title, Match Count & Customize Button */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1A1A1A]/15 pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#766E5F]/15 pb-4">
                 <div>
-                  <h2 className="font-serif font-bold text-3xl sm:text-4xl text-[#111111] tracking-tight mb-1">
+                  <h2 className="font-serif font-bold text-3xl sm:text-4xl text-[#201E19] tracking-tight mb-1">
                     YOUR TIMES
                   </h2>
                   <p className="text-xs font-mono text-[#666666] tracking-wider uppercase">
@@ -1061,7 +1403,7 @@ export default function YourTimesDashboard({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsCustomizeOpen(true)}
-                    className="border border-[#1A1A1A]/30 bg-[#FAF7F0] hover:bg-[#EAE4D6] text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                    className="border border-[#766E5F]/30 bg-[#EFE8D5] hover:bg-[#EAE4D6] text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                   >
                     <SlidersHorizontal className="w-3.5 h-3.5" />
                     <span>Customize</span>
@@ -1069,7 +1411,7 @@ export default function YourTimesDashboard({
 
                   <button
                     onClick={() => onNavigateToBroadsheet?.("frontpage")}
-                    className="border border-[#1A1A1A] bg-[#111111] hover:bg-[#2A2A2A] text-[#F2EEE5] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                    className="border border-[#766E5F] bg-[#201E19] hover:bg-[#2A2A2A] text-[#E8DFC8] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                     title="Open Full Cinematic Broadsheet"
                   >
                     <span>Full Broadsheet</span>
@@ -1098,12 +1440,12 @@ export default function YourTimesDashboard({
               {/* ── Section: "Recommended for you" ────────────────── */}
               <section className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#111111]">
+                  <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#201E19]">
                     Recommended for you
                   </h3>
                   <button
                     onClick={() => setActiveCategory("All")}
-                    className="text-xs font-mono font-semibold text-[#111111] hover:text-[#A71919] flex items-center gap-1 transition-colors cursor-pointer"
+                    className="text-xs font-mono font-semibold text-[#201E19] hover:text-[#9F3028] flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <span>View all</span>
                     <span>→</span>
@@ -1111,21 +1453,21 @@ export default function YourTimesDashboard({
                 </div>
 
                 {/* ── Sort & Filter Controls Bar ────────────────── */}
-                <div className="bg-[#FAF7F0] border border-[#1A1A1A]/15 rounded-xl p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+                <div className="bg-[#EFE8D5] border border-[#766E5F]/15 rounded-xl p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
                   {/* Left: Active Date & Status Tag */}
                   <div className="flex items-center flex-wrap gap-2 text-xs font-mono">
-                    <div className="flex items-center gap-1.5 bg-[#EFEAE0] border border-[#1A1A1A]/20 px-2.5 py-1 rounded-lg font-bold text-[#111111]">
-                      <Calendar className="w-3.5 h-3.5 text-[#A71919]" />
-                      <span className="uppercase">{selectedDate ? selectedDateLabel : "ALL OCTOBER EDITIONS"}</span>
+                    <div className="flex items-center gap-1.5 bg-[#EFEAE0] border border-[#766E5F]/20 px-2.5 py-1 rounded-lg font-bold text-[#201E19]">
+                      <Calendar className="w-3.5 h-3.5 text-[#9F3028]" />
+                      <span className="uppercase">{selectedDate ? selectedDateLabel : "ALL EDITIONS"}</span>
                     </div>
 
-                    <span className="text-[#555555] font-semibold text-[11px]">
+                    <span className="text-[#39352D] font-semibold text-[11px]">
                       • {recommendedCards.length} {recommendedCards.length === 1 ? "story" : "stories"}
                     </span>
 
                     {/* Filter Active Tags */}
-                    {activeCategory !== "All" && (
-                      <span className="bg-[#111111] text-[#F2EEE5] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    {activeCategory && activeCategory.toLowerCase() !== "all" && (
+                      <span className="bg-[#201E19] text-[#E8DFC8] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                         Desk: {activeCategory}
                         <button type="button" onClick={() => setActiveCategory("All")} className="hover:text-red-300 cursor-pointer">
                           <X className="w-2.5 h-2.5" />
@@ -1134,7 +1476,7 @@ export default function YourTimesDashboard({
                     )}
 
                     {readTimeFilter !== "all" && (
-                      <span className="bg-[#111111] text-[#F2EEE5] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="bg-[#201E19] text-[#E8DFC8] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                         {readTimeFilter === "short" ? "Quick (<5m)" : "In-Depth (5m+)"}
                         <button type="button" onClick={() => setReadTimeFilter("all")} className="hover:text-red-300 cursor-pointer">
                           <X className="w-2.5 h-2.5" />
@@ -1143,7 +1485,7 @@ export default function YourTimesDashboard({
                     )}
 
                     {savedOnlyFilter && (
-                      <span className="bg-[#A71919] text-[#F2EEE5] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="bg-[#9F3028] text-[#E8DFC8] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                         Bookmarked Only
                         <button type="button" onClick={() => setSavedOnlyFilter(false)} className="hover:text-amber-200 cursor-pointer">
                           <X className="w-2.5 h-2.5" />
@@ -1155,22 +1497,66 @@ export default function YourTimesDashboard({
                       <button
                         type="button"
                         onClick={() => setSelectedDate(null)}
-                        className="text-[10px] font-bold text-[#A71919] hover:underline uppercase cursor-pointer"
+                        className="text-[10px] font-bold text-[#9F3028] hover:underline uppercase cursor-pointer"
+                        title="Return to Live Updated News"
                       >
-                        Reset Date
+                        ← Back to Updated News
                       </button>
+                    )}
+
+                    {isSyncingWire && (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#DFD5BC]/60 border border-[#766E5F]/30 text-[10px] font-mono font-bold text-[#201E19] uppercase tracking-wider rounded-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#9F3028] animate-ping" />
+                        <span>LIVE WIRE · UPDATING EDITION</span>
+                      </div>
                     )}
                   </div>
 
                   {/* Right: Sort and Quick Filter Selectors */}
                   <div className="flex items-center flex-wrap gap-2 text-xs font-mono">
+                    {/* Edition Scope Selector: Updated First / Updated Only / Previous Only */}
+                    {!selectedDate && (
+                      <div className="flex items-center border border-[#766E5F]/20 rounded-lg overflow-hidden bg-[#EFEAE0]/80">
+                        <button
+                          type="button"
+                          onClick={() => setEditionScope("all")}
+                          className={`px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
+                            editionScope === "all" ? "bg-[#201E19] text-[#E8DFC8]" : "text-[#39352D] hover:text-[#201E19]"
+                          }`}
+                          title="Show updated news first, then previous news"
+                        >
+                          Updated 1st
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditionScope("updated")}
+                          className={`px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#766E5F]/15 ${
+                            editionScope === "updated" ? "bg-[#9F3028] text-[#E8DFC8]" : "text-[#39352D] hover:text-[#201E19]"
+                          }`}
+                          title="Show only updated news"
+                        >
+                          ● Updated
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditionScope("previous")}
+                          className={`px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#766E5F]/15 ${
+                            editionScope === "previous" ? "bg-[#201E19] text-[#E8DFC8]" : "text-[#39352D] hover:text-[#201E19]"
+                          }`}
+                          title="Show only previous news"
+                        >
+                          Previous
+                        </button>
+                      </div>
+                    )}
+
                     {/* Read Time Filter Pills */}
-                    <div className="flex items-center border border-[#1A1A1A]/20 rounded-lg overflow-hidden bg-[#EFEAE0]/80">
+                    <div className="flex items-center border border-[#766E5F]/20 rounded-lg overflow-hidden bg-[#EFEAE0]/80">
                       <button
                         type="button"
                         onClick={() => setReadTimeFilter("all")}
                         className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
-                          readTimeFilter === "all" ? "bg-[#111111] text-[#F2EEE5]" : "text-[#555555] hover:text-[#111111]"
+                          readTimeFilter === "all" ? "bg-[#201E19] text-[#E8DFC8]" : "text-[#39352D] hover:text-[#201E19]"
                         }`}
                         title="Show all lengths"
                       >
@@ -1179,8 +1565,8 @@ export default function YourTimesDashboard({
                       <button
                         type="button"
                         onClick={() => setReadTimeFilter("short")}
-                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#1A1A1A]/15 ${
-                          readTimeFilter === "short" ? "bg-[#111111] text-[#F2EEE5]" : "text-[#555555] hover:text-[#111111]"
+                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#766E5F]/15 ${
+                          readTimeFilter === "short" ? "bg-[#201E19] text-[#E8DFC8]" : "text-[#39352D] hover:text-[#201E19]"
                         }`}
                         title="Short reads under 5 minutes"
                       >
@@ -1189,8 +1575,8 @@ export default function YourTimesDashboard({
                       <button
                         type="button"
                         onClick={() => setReadTimeFilter("long")}
-                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#1A1A1A]/15 ${
-                          readTimeFilter === "long" ? "bg-[#111111] text-[#F2EEE5]" : "text-[#555555] hover:text-[#111111]"
+                        className={`px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer border-l border-[#766E5F]/15 ${
+                          readTimeFilter === "long" ? "bg-[#201E19] text-[#E8DFC8]" : "text-[#39352D] hover:text-[#201E19]"
                         }`}
                         title="In-depth reads 5 minutes or longer"
                       >
@@ -1204,8 +1590,8 @@ export default function YourTimesDashboard({
                       onClick={() => setSavedOnlyFilter((prev) => !prev)}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
                         savedOnlyFilter
-                          ? "bg-[#A71919] text-[#F2EEE5] border-[#A71919] shadow-2xs"
-                          : "bg-[#EFEAE0] hover:bg-[#E4DDD0] border-[#1A1A1A]/20 text-[#444444]"
+                          ? "bg-[#9F3028] text-[#E8DFC8] border-[#9F3028] shadow-2xs"
+                          : "bg-[#EFEAE0] hover:bg-[#D7CCB2] border-[#766E5F]/20 text-[#39352D]"
                       }`}
                       title="Filter only saved bookmarks"
                     >
@@ -1214,13 +1600,13 @@ export default function YourTimesDashboard({
                     </button>
 
                     {/* Sort By Dropdown */}
-                    <div className="flex items-center gap-1 bg-[#EFEAE0] border border-[#1A1A1A]/20 px-2 py-1 rounded-lg">
-                      <ArrowUpDown className="w-3 h-3 text-[#A71919] shrink-0" />
+                    <div className="flex items-center gap-1 bg-[#EFEAE0] border border-[#766E5F]/20 px-2 py-1 rounded-lg">
+                      <ArrowUpDown className="w-3 h-3 text-[#9F3028] shrink-0" />
                       <span className="text-[10px] text-[#777777] uppercase font-bold shrink-0">SORT:</span>
                       <select
                         value={sortBy}
                         onChange={(e) => setSortBy(e.target.value)}
-                        className="bg-transparent font-bold text-xs text-[#111111] outline-hidden cursor-pointer tracking-tight"
+                        className="bg-transparent font-bold text-xs text-[#201E19] outline-hidden cursor-pointer tracking-tight"
                         aria-label="Sort news articles"
                       >
                         <option value="latest">Latest First</option>
@@ -1233,102 +1619,314 @@ export default function YourTimesDashboard({
                   </div>
                 </div>
 
-                {recommendedCards.length === 0 ? (
-                  <div className="bg-[#FAF7F0] border-2 border-dashed border-[#1A1A1A]/20 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-2">
-                    <Filter className="w-8 h-8 text-[#A71919]/60" />
-                    <h4 className="font-serif font-bold text-lg text-[#111111]">No stories matched these filters</h4>
+                {wireError ? (
+                  <div className="bg-[#FAF7F0] border-2 border-dashed border-[#9F3028]/30 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-3">
+                    <Radio className="w-8 h-8 text-[#9F3028]/60" />
+                    <h4 className="font-serif font-bold text-lg text-[#201E19]">Telegraph Wire Interrupted</h4>
+                    <p className="text-xs font-mono text-[#666666] max-w-md">{wireError}</p>
+                    <button
+                      onClick={() => loadLiveArticles(false)}
+                      className="px-4 py-1.5 bg-[#201E19] text-[#E8DFC8] rounded-md text-xs font-mono font-bold hover:bg-[#9F3028] transition-colors cursor-pointer"
+                    >
+                      RETRY WIRE TRANSMISSION
+                    </button>
+                  </div>
+                ) : recommendedCards.length === 0 ? (
+                  <div className="bg-[#FAF7F0] border-2 border-dashed border-[#766E5F]/20 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-2">
+                    <Filter className="w-8 h-8 text-[#9F3028]/60" />
+                    <h4 className="font-serif font-bold text-lg text-[#201E19]">No stories matched these filters</h4>
                     <p className="text-xs font-mono text-[#666666] max-w-md">
-                      Try resetting the read-time or category filters to view other stories available for this October edition.
+                      Try resetting the read-time or category filters to view other stories available for this edition.
                     </p>
                     <button
-                      type="button"
                       onClick={() => {
                         setActiveCategory("All");
                         setReadTimeFilter("all");
                         setSavedOnlyFilter(false);
+                        setEditionScope("all");
                       }}
-                      className="mt-2 text-xs font-mono font-bold bg-[#111111] text-[#F2EEE5] px-3 py-1.5 rounded-lg cursor-pointer hover:bg-[#222222]"
+                      className="mt-2 text-xs font-mono font-bold text-[#9F3028] hover:underline cursor-pointer"
                     >
-                      Clear Filters
+                      CLEAR EDITORIAL FILTERS
                     </button>
                   </div>
-                ) : (
-                /* Responsive Cards Grid: 1 col on mobile, 2 cols on tablet, 3 cols on desktop */
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                  {recommendedCards.map((story) => (
-                    <article
-                      key={story.id}
-                      onClick={() => handleArticleClick(story)}
-                      className="group bg-[#FAF7F0] border border-[#1A1A1A]/20 rounded-xl overflow-hidden hover:border-[#1A1A1A] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col"
-                    >
-                      {/* Image Container */}
-                      <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#ECE6D8]">
-                        <Image
-                          src={story.image || "/images/hero_editorial.jpg"}
-                          alt={story.headline}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        {/* Bookmark Button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSaveClipping(story);
-                          }}
-                          className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-[#111111]/70 hover:bg-[#111111] text-white backdrop-blur-xs transition-colors cursor-pointer"
-                          title="Save story"
-                        >
-                          <Bookmark
-                            className={`w-3.5 h-3.5 ${
-                              isSaved(story.id) ? "fill-[#A71919] text-[#A71919]" : ""
-                            }`}
-                          />
-                        </button>
+                ) : selectedDate ? (
+                  /* Single Selected Archival Edition Grid */
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between border-b border-[#766E5F]/15 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-[#201E19] text-[#E8DFC8] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider">
+                          ARCHIVE EDITION
+                        </span>
+                        <h4 className="font-serif font-bold text-base sm:text-lg text-[#201E19]">
+                          Edition for {selectedDateLabel}
+                        </h4>
                       </div>
-
-                      {/* Content Body */}
-                      <div className="p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                          <h4 className="font-serif font-bold text-lg sm:text-xl text-[#111111] leading-snug line-clamp-2 group-hover:text-[#A71919] transition-colors">
-                            {story.headline}
-                          </h4>
-                        </div>
-
-                        {/* Metadata Row: Category & Publication Date */}
-                        <div className="mt-3 pt-3 border-t border-[#1A1A1A]/10 flex items-center justify-between text-[11px] font-mono text-[#555555]">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-[#111111] uppercase tracking-wider">
-                              {story.desk}
-                            </span>
-                            <span>•</span>
-                            <span
-                              suppressHydrationWarning
-                              className="text-[#A71919] font-semibold"
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDate(null)}
+                        className="text-xs font-mono font-bold text-[#9F3028] hover:underline cursor-pointer"
+                      >
+                        ← Back to Updated News
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                      {recommendedCards.map((story) => (
+                        <article
+                          key={story.id}
+                          onClick={() => handleArticleClick(story)}
+                          className="group bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl overflow-hidden hover:border-[#766E5F] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col relative"
+                        >
+                          <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#DFD5BC]">
+                            <Image
+                              src={story.urlToImage || story.image || "/window.svg"}
+                              alt={story.headline}
+                              fill
+                              unoptimized
+                              className="object-cover group-hover:scale-105 transition-transform duration-500"
+                              onError={(e) => {
+                                e.currentTarget.srcset = "";
+                                e.currentTarget.src = "/window.svg";
+                              }}
+                            />
+                            <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-xs bg-[#201E19]/85 text-[#E0D8C8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20 shadow-xs z-10 pointer-events-none">
+                              <span>{story.date || "ARCHIVE"}</span>
+                            </div>
+                            {story.video && (
+                              <div className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-xs bg-[#201E19]/85 text-[#E8DFC8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20 shadow-xs z-10 pointer-events-none">
+                                <Play className="w-2.5 h-2.5 fill-[#9F3028] text-[#9F3028]" />
+                                <span>VIDEO</span>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSaveClipping(story);
+                              }}
+                              className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-[#201E19]/70 hover:bg-[#201E19] text-white backdrop-blur-xs transition-colors cursor-pointer z-10"
+                              title="Save story"
+                              aria-label="Save story"
                             >
-                              {story.date || getDynamicTimeAgo(story.minutesAgo || 15)}
+                              <Bookmark className={`w-3.5 h-3.5 ${isSaved(story.id) ? "fill-[#9F3028] text-[#9F3028]" : ""}`} />
+                            </button>
+                          </div>
+                          <div className="p-4 flex-1 flex flex-col justify-between">
+                            <div>
+                              <h4 className="font-serif font-bold text-lg sm:text-xl text-[#201E19] leading-snug line-clamp-2 group-hover:text-[#9F3028] transition-colors">
+                                {story.headline}
+                              </h4>
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-[#766E5F]/10 flex items-center justify-between text-[11px] font-mono text-[#39352D]">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-[#201E19] uppercase tracking-wider">{story.desk}</span>
+                                <span>•</span>
+                                <span className="text-[#666666] font-semibold">{story.date}</span>
+                              </div>
+                              <span className="text-[10px] text-[#777777]">{story.readTime}</span>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* Dual Section: Updated News First, then Previous News */
+                  <div className="flex flex-col gap-8">
+                    {/* ── Section 1: UPDATED NEWS (Today / Latest Edition) ── */}
+                    {(editionScope === "all" || editionScope === "updated") && updatedNewsStories.length > 0 && (
+                      <div className="flex flex-col gap-3.5">
+                        <div className="flex items-center justify-between border-b border-[#766E5F]/15 pb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="bg-[#9F3028] text-[#E8DFC8] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                              <span>UPDATED NEWS</span>
+                            </div>
+                            <h4 className="font-serif font-bold text-base sm:text-lg text-[#201E19]">
+                              Latest Dispatches
+                            </h4>
+                            <span className="text-xs font-mono text-[#666666] hidden xs:inline">
+                              • {updatedNewsStories.length} {updatedNewsStories.length === 1 ? "story" : "stories"}
                             </span>
                           </div>
-
-                          <span className="text-[10px] text-[#777777]">
-                            {story.readTime}
+                          <span className="text-[10px] font-mono text-[#9F3028] font-bold uppercase tracking-wider">
+                            ● LIVE WIRE
                           </span>
                         </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                          {updatedNewsStories.map((story) => (
+                            <article
+                              key={story.id}
+                              onClick={() => handleArticleClick(story)}
+                              className="group bg-[#EFE8D5] border-2 border-[#766E5F]/20 hover:border-[#9F3028] rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col relative"
+                            >
+                              <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#DFD5BC]">
+                                <Image
+                                  src={story.urlToImage || story.image || "/window.svg"}
+                                  alt={story.headline}
+                                  fill
+                                  unoptimized
+                                  className="object-cover group-hover:scale-105 transition-transform duration-500"
+                                  onError={(e) => {
+                                    e.currentTarget.srcset = "";
+                                    e.currentTarget.src = "/window.svg";
+                                  }}
+                                />
+                                <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-xs bg-[#9F3028] text-[#E8DFC8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 shadow-xs z-10 pointer-events-none">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                  <span>UPDATED</span>
+                                </div>
+                                {story.video && (
+                                  <div className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-xs bg-[#201E19]/85 text-[#E8DFC8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20 shadow-xs z-10 pointer-events-none">
+                                    <Play className="w-2.5 h-2.5 fill-[#9F3028] text-[#9F3028]" />
+                                    <span>VIDEO</span>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSaveClipping(story);
+                                  }}
+                                  className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-[#201E19]/70 hover:bg-[#201E19] text-white backdrop-blur-xs transition-colors cursor-pointer z-10"
+                                  title="Save story"
+                                  aria-label="Save story"
+                                >
+                                  <Bookmark className={`w-3.5 h-3.5 ${isSaved(story.id) ? "fill-[#9F3028] text-[#9F3028]" : ""}`} />
+                                </button>
+                              </div>
+                              <div className="p-4 flex-1 flex flex-col justify-between">
+                                <div>
+                                  <h4 className="font-serif font-bold text-lg sm:text-xl text-[#201E19] leading-snug line-clamp-2 group-hover:text-[#9F3028] transition-colors">
+                                    {story.headline}
+                                  </h4>
+                                </div>
+                                <div className="mt-3 pt-3 border-t border-[#766E5F]/10 flex items-center justify-between text-[11px] font-mono text-[#39352D]">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-[#201E19] uppercase tracking-wider">{story.desk}</span>
+                                    <span>•</span>
+                                    <span suppressHydrationWarning className="text-[#9F3028] font-bold">
+                                      {story.date || getDynamicTimeAgo(story.minutesAgo || 15)}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-[#777777]">{story.readTime}</span>
+                                </div>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
                       </div>
-                    </article>
-                  ))}
-                </div>
+                    )}
+
+                    {/* ── Editorial Broadsheet Divider Between Updated & Previous News ── */}
+                    {editionScope === "all" && updatedNewsStories.length > 0 && previousNewsStories.length > 0 && (
+                      <div className="relative py-2 flex items-center justify-center my-1">
+                        <div className="w-full border-t border-[#766E5F]/20" />
+                        <div className="absolute bg-[#E8DFC8] px-3.5 flex items-center gap-2 text-[10px] font-mono font-bold text-[#39352D] uppercase tracking-widest border border-[#766E5F]/15 rounded-full shadow-2xs py-1">
+                          <Calendar className="w-3 h-3 text-[#9F3028]" />
+                          <span>PREVIOUS NEWS &amp; EARLIER EDITIONS</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Section 2: PREVIOUS NEWS (Earlier Editions in Descending Order) ── */}
+                    {(editionScope === "all" || editionScope === "previous") && previousNewsStories.length > 0 && (
+                      <div className="flex flex-col gap-3.5">
+                        <div className="flex items-center justify-between border-b border-[#766E5F]/15 pb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="bg-[#201E19] text-[#E8DFC8] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+                              <Calendar className="w-3 h-3 text-[#C5A059]" />
+                              <span>PREVIOUS NEWS</span>
+                            </div>
+                            <h4 className="font-serif font-bold text-base sm:text-lg text-[#201E19]">
+                              Earlier Dispatches &amp; Archives
+                            </h4>
+                            <span className="text-xs font-mono text-[#666666] hidden xs:inline">
+                              • {previousNewsStories.length} {previousNewsStories.length === 1 ? "story" : "stories"}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-[#777777] uppercase tracking-wider hidden sm:inline">
+                            Chronological Archive
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                          {previousNewsStories.map((story) => (
+                            <article
+                              key={story.id}
+                              onClick={() => handleArticleClick(story)}
+                              className="group bg-[#EFE8D5] border border-[#766E5F]/20 hover:border-[#766E5F] rounded-xl overflow-hidden hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col relative"
+                            >
+                              <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#DFD5BC]">
+                                <Image
+                                  src={story.urlToImage || story.image || "/window.svg"}
+                                  alt={story.headline}
+                                  fill
+                                  unoptimized
+                                  className="object-cover group-hover:scale-105 transition-transform duration-500"
+                                  onError={(e) => {
+                                    e.currentTarget.srcset = "";
+                                    e.currentTarget.src = "/window.svg";
+                                  }}
+                                />
+                                <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-xs bg-[#201E19]/85 text-[#E0D8C8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20 shadow-xs z-10 pointer-events-none">
+                                  <span>{story.date || "PREVIOUS"}</span>
+                                </div>
+                                {story.video && (
+                                  <div className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-xs bg-[#201E19]/85 text-[#E8DFC8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20 shadow-xs z-10 pointer-events-none">
+                                    <Play className="w-2.5 h-2.5 fill-[#9F3028] text-[#9F3028]" />
+                                    <span>VIDEO</span>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSaveClipping(story);
+                                  }}
+                                  className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-[#201E19]/70 hover:bg-[#201E19] text-white backdrop-blur-xs transition-colors cursor-pointer z-10"
+                                  title="Save story"
+                                  aria-label="Save story"
+                                >
+                                  <Bookmark className={`w-3.5 h-3.5 ${isSaved(story.id) ? "fill-[#9F3028] text-[#9F3028]" : ""}`} />
+                                </button>
+                              </div>
+                              <div className="p-4 flex-1 flex flex-col justify-between">
+                                <div>
+                                  <h4 className="font-serif font-bold text-lg sm:text-xl text-[#201E19] leading-snug line-clamp-2 group-hover:text-[#9F3028] transition-colors">
+                                    {story.headline}
+                                  </h4>
+                                </div>
+                                <div className="mt-3 pt-3 border-t border-[#766E5F]/10 flex items-center justify-between text-[11px] font-mono text-[#39352D]">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-[#201E19] uppercase tracking-wider">{story.desk}</span>
+                                    <span>•</span>
+                                    <span suppressHydrationWarning className="text-[#666666] font-semibold">
+                                      {story.date || getDynamicTimeAgo(story.minutesAgo || 15)}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-[#777777]">{story.readTime}</span>
+                                </div>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </section>
 
               {/* ── Section: "Your Topics" ────────────────────────── */}
               <section className="flex flex-col gap-3 pt-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#111111]">
+                  <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#201E19]">
                     Your Topics
                   </h3>
                   <button
                     onClick={() => setIsManageTopicsOpen(true)}
-                    className="text-xs font-mono font-semibold text-[#111111] hover:text-[#A71919] flex items-center gap-1 transition-colors cursor-pointer"
+                    className="text-xs font-mono font-semibold text-[#201E19] hover:text-[#9F3028] flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <span>Manage</span>
                     <span>→</span>
@@ -1350,14 +1948,14 @@ export default function YourTimesDashboard({
                         else setActiveCategory("All");
                       }}
                       style={{
-                        backgroundColor: "#FAF7F0",
+                        backgroundColor: "#EFE8D5",
                         color: "#222222",
-                        border: "1.5px solid rgba(26, 26, 26, 0.25)",
+                        border: "1.5px solid rgba(118, 110, 95, 0.25)",
                         height: "36px",
                         padding: "0 18px",
                         borderRadius: "9999px",
                       }}
-                      className="text-xs font-sans font-semibold hover:border-[#111111] hover:bg-[#EAE4D6] transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-xs shrink-0 select-none justify-center"
+                      className="text-xs font-sans font-semibold hover:border-[#766E5F] hover:bg-[#EAE4D6] transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-xs shrink-0 select-none justify-center"
                     >
                       <span className="leading-none">{topic}</span>
                     </button>
@@ -1370,7 +1968,7 @@ export default function YourTimesDashboard({
                       padding: "0 16px",
                       borderRadius: "9999px",
                     }}
-                    className="text-xs font-sans font-semibold border border-dashed border-[#1A1A1A]/40 text-[#555555] hover:text-[#111111] hover:border-[#111111] transition-colors cursor-pointer inline-flex items-center gap-1 shrink-0"
+                    className="text-xs font-sans font-semibold border border-dashed border-[#766E5F]/40 text-[#39352D] hover:text-[#201E19] hover:border-[#766E5F] transition-colors cursor-pointer inline-flex items-center gap-1 shrink-0"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Add Topic</span>
@@ -1379,9 +1977,9 @@ export default function YourTimesDashboard({
               </section>
 
               {/* Real-Time Live Breaking News Wire Bar */}
-              <section className="bg-[#FAF7F0] border border-[#1A1A1A]/20 rounded-xl p-4 shadow-xs">
-                <div className="flex items-center gap-2 mb-2 text-xs font-mono font-bold text-[#A71919]">
-                  <span className="w-2 h-2 rounded-full bg-[#A71919] animate-ping" />
+              <section className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 shadow-xs">
+                <div className="flex items-center gap-2 mb-2 text-xs font-mono font-bold text-[#9F3028]">
+                  <span className="w-2 h-2 rounded-full bg-[#9F3028] animate-ping" />
                   <span>LIVE REASONING DISPATCH FEED</span>
                   <span className="text-[#777777] font-normal ml-auto">
                     UPDATED REAL-TIME
@@ -1392,9 +1990,9 @@ export default function YourTimesDashboard({
                     <div
                       key={idx}
                       onClick={() => onOpenSearchModal?.()}
-                      className="flex items-start gap-2 text-xs font-mono text-[#222222] hover:text-[#A71919] cursor-pointer transition-colors p-1 rounded hover:bg-[#ECE6D8]"
+                      className="flex items-start gap-2 text-xs font-mono text-[#222222] hover:text-[#9F3028] cursor-pointer transition-colors p-1 rounded hover:bg-[#DFD5BC]"
                     >
-                      <span className="text-[#A71919] font-bold shrink-0">[{idx + 1}]</span>
+                      <span className="text-[#9F3028] font-bold shrink-0">[{idx + 1}]</span>
                       <p className="line-clamp-1">{headline}</p>
                       <span className="ml-auto text-[10px] text-[#777777] shrink-0">
                         {idx === 0 ? "JUST NOW" : idx === 1 ? "4M AGO" : "12M AGO"}
@@ -1409,31 +2007,31 @@ export default function YourTimesDashboard({
           {/* TAB 2: BOOKMARKS */}
           {activeTab === "bookmarks" && (
             <div className="flex flex-col gap-6">
-              <div className="border-b border-[#1A1A1A]/15 pb-3 flex items-center justify-between">
+              <div className="border-b border-[#766E5F]/15 pb-3 flex items-center justify-between">
                 <div>
-                  <h2 className="font-serif font-bold text-3xl text-[#111111]">Your Saved Bookmarks</h2>
+                  <h2 className="font-serif font-bold text-3xl text-[#201E19]">Your Saved Bookmarks</h2>
                   <p className="text-xs font-mono text-[#666666] uppercase mt-1">
                     {safeClippings.length} ARTICLES SAVED IN YOUR SCRAPBOOK
                   </p>
                 </div>
                 <button
                   onClick={() => setActiveTab("yourtimes")}
-                  className="text-xs font-mono underline hover:text-[#A71919] cursor-pointer"
+                  className="text-xs font-mono underline hover:text-[#9F3028] cursor-pointer"
                 >
                   ← Back to Dashboard
                 </button>
               </div>
 
               {safeClippings.length === 0 ? (
-                <div className="bg-[#FAF7F0] border border-dashed border-[#1A1A1A]/30 rounded-xl p-8 text-center">
+                <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
                   <Bookmark className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
-                  <p className="font-serif text-lg text-[#333333]">No saved clippings yet</p>
+                  <p className="font-serif text-lg text-[#39352D]">No saved clippings yet</p>
                   <p className="text-xs text-[#777777] font-mono mt-1">
                     Click the bookmark icon on any story to save it here for offline reading.
                   </p>
                   <button
                     onClick={() => setActiveTab("yourtimes")}
-                    className="mt-4 bg-[#111111] text-[#F2EEE5] px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#2A2A2A] cursor-pointer"
+                    className="mt-4 bg-[#201E19] text-[#E8DFC8] px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#2A2A2A] cursor-pointer"
                   >
                     Browse Stories
                   </button>
@@ -1444,28 +2042,28 @@ export default function YourTimesDashboard({
                     <div
                       key={item.id}
                       onClick={() => handleArticleClick(item)}
-                      className="bg-[#FAF7F0] border border-[#1A1A1A]/20 rounded-xl p-4 hover:border-[#1A1A1A] cursor-pointer transition-all flex flex-col justify-between gap-3"
+                      className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 hover:border-[#766E5F] cursor-pointer transition-all flex flex-col justify-between gap-3"
                     >
                       <div>
                         <div className="flex items-center justify-between text-xs font-mono text-[#666666] mb-1">
-                          <span className="font-bold text-[#111111]">{item.desk || "FEATURE"}</span>
+                          <span className="font-bold text-[#201E19]">{item.desk || "FEATURE"}</span>
                           <span>{item.readTime || "4 MIN"}</span>
                         </div>
-                        <h4 className="font-serif font-bold text-lg text-[#111111] hover:text-[#A71919]">
+                        <h4 className="font-serif font-bold text-lg text-[#201E19] hover:text-[#9F3028]">
                           {item.headline}
                         </h4>
-                        <p className="text-xs text-[#555555] line-clamp-2 mt-1">
+                        <p className="text-xs text-[#39352D] line-clamp-2 mt-1">
                           {item.deck || item.snippet}
                         </p>
                       </div>
-                      <div className="flex items-center justify-between pt-2 border-t border-[#1A1A1A]/10 text-xs font-mono">
+                      <div className="flex items-center justify-between pt-2 border-t border-[#766E5F]/10 text-xs font-mono">
                         <span className="text-[#777777]">{item.date || "RECENT"}</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onSaveClipping(item);
                           }}
-                          className="text-[#A71919] hover:underline cursor-pointer"
+                          className="text-[#9F3028] hover:underline cursor-pointer"
                         >
                           Remove
                         </button>
@@ -1480,48 +2078,100 @@ export default function YourTimesDashboard({
           {/* TAB 3: READING HISTORY */}
           {activeTab === "history" && (
             <div className="flex flex-col gap-6">
-              <div className="border-b border-[#1A1A1A]/15 pb-3 flex items-center justify-between">
+              <div className="border-b border-[#766E5F]/15 pb-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="font-serif font-bold text-3xl text-[#111111]">Reading History</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-serif font-bold text-3xl text-[#201E19]">Reading History</h2>
+                    <span className="text-xs font-mono font-bold bg-[#201E19] text-[#E8DFC8] px-2 py-0.5 rounded-full">
+                      {safeReadingHistory.length}
+                    </span>
+                  </div>
                   <p className="text-xs font-mono text-[#666666] uppercase mt-1">
-                    Recently viewed broadsheets and dispatches
+                    Recently viewed broadsheets, dispatches, and cognitive trails
                   </p>
                 </div>
-                <button
-                  onClick={() => setActiveTab("yourtimes")}
-                  className="text-xs font-mono underline hover:text-[#A71919] cursor-pointer"
-                >
-                  ← Back to Dashboard
-                </button>
+                <div className="flex items-center gap-3">
+                  {safeReadingHistory.length > 0 && (
+                    <button
+                      onClick={handleClearAllHistory}
+                      className="text-xs font-mono text-[#9F3028] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear History</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveTab("yourtimes")}
+                    className="text-xs font-mono underline hover:text-[#9F3028] cursor-pointer"
+                  >
+                    ← Back to Dashboard
+                  </button>
+                </div>
               </div>
 
               {safeReadingHistory.length === 0 ? (
-                <div className="bg-[#FAF7F0] border border-dashed border-[#1A1A1A]/30 rounded-xl p-8 text-center">
+                <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
                   <History className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
-                  <p className="font-serif text-lg text-[#333333]">No reading history recorded</p>
+                  <p className="font-serif text-lg text-[#39352D]">No reading history recorded</p>
                   <p className="text-xs text-[#777777] font-mono mt-1">
-                    Articles you open will automatically appear in your reading trail.
+                    Articles you read across any broadsheet desk will automatically synchronize to your reading trail.
                   </p>
+                  <button
+                    onClick={() => setActiveTab("yourtimes")}
+                    className="mt-4 bg-[#201E19] text-[#E8DFC8] px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#2A2A2A] cursor-pointer"
+                  >
+                    Browse Daily Editions
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {safeReadingHistory.map((item, idx) => (
                     <div
-                      key={idx}
+                      key={item._id || item.id || idx}
                       onClick={() => handleArticleClick(item)}
-                      className="bg-[#FAF7F0] border border-[#1A1A1A]/20 rounded-xl p-4 hover:border-[#1A1A1A] cursor-pointer transition-all flex items-center justify-between"
+                      className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 hover:border-[#766E5F] hover:shadow-md cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
                     >
-                      <div>
-                        <span className="text-[10px] font-mono text-[#A71919] font-bold uppercase">
-                          {item.desk || "DESK"}
-                        </span>
-                        <h4 className="font-serif font-bold text-base text-[#111111] hover:text-[#A71919]">
-                          {item.headline}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-mono text-[#9F3028] font-bold uppercase">
+                            {item.desk || "BROADSHEET"}
+                          </span>
+                          <span className="text-[#888888] text-[10px] font-mono">•</span>
+                          <span className="text-[10px] font-mono bg-[#201E19]/10 text-[#39352D] px-1.5 py-0.2 rounded font-semibold">
+                            {item.readPercentage ? `${item.readPercentage}% READ` : "COMPLETED"}
+                          </span>
+                          {item.readAt && (
+                            <span className="text-[10px] font-mono text-[#777777]">
+                              {new Date(item.readAt).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="font-serif font-bold text-base text-[#201E19] group-hover:text-[#9F3028] transition-colors leading-snug">
+                          {item.headline || item.title}
                         </h4>
+                        {item.deck && (
+                          <p className="text-xs text-[#666666] font-serif line-clamp-1 mt-0.5">
+                            {item.deck}
+                          </p>
+                        )}
                       </div>
-                      <span className="text-xs font-mono text-[#777777] shrink-0">
-                        {item.readTime || "5 MIN"}
-                      </span>
+
+                      <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                        <span className="text-xs font-mono text-[#777777]">
+                          {item.readTime || "5 MIN"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemoveHistoryItem(e, item)}
+                          className="p-1.5 text-[#888888] hover:text-[#9F3028] hover:bg-[#9F3028]/10 rounded transition-colors cursor-pointer"
+                          title="Remove from history"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1532,8 +2182,8 @@ export default function YourTimesDashboard({
           {/* TAB 4: FOLLOWING */}
           {activeTab === "following" && (
             <div className="flex flex-col gap-6">
-              <div className="border-b border-[#1A1A1A]/15 pb-3">
-                <h2 className="font-serif font-bold text-3xl text-[#111111]">Followed Desks & Journalists</h2>
+              <div className="border-b border-[#766E5F]/15 pb-3">
+                <h2 className="font-serif font-bold text-3xl text-[#201E19]">Followed Desks & Journalists</h2>
                 <p className="text-xs font-mono text-[#666666] uppercase mt-1">
                   Custom feeds curated by you
                 </p>
@@ -1548,16 +2198,16 @@ export default function YourTimesDashboard({
                 ].map((person, idx) => (
                   <div
                     key={idx}
-                    className="bg-[#FAF7F0] border border-[#1A1A1A]/20 rounded-xl p-4 flex items-center justify-between"
+                    className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 flex items-center justify-between"
                   >
                     <div>
-                      <h4 className="font-serif font-bold text-base text-[#111111]">{person.name}</h4>
+                      <h4 className="font-serif font-bold text-base text-[#201E19]">{person.name}</h4>
                       <p className="text-xs text-[#666666] font-mono">{person.desk}</p>
                       <span className="text-[10px] text-[#888888] font-mono mt-1 block">
                         {person.followers} subscribers
                       </span>
                     </div>
-                    <button className="bg-[#111111] text-[#F2EEE5] text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer">
+                    <button className="bg-[#201E19] text-[#E8DFC8] text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer">
                       <UserCheck className="w-3.5 h-3.5" />
                       <span>Following</span>
                     </button>
@@ -1570,65 +2220,129 @@ export default function YourTimesDashboard({
           {/* TAB 5: NOTIFICATIONS */}
           {activeTab === "notifications" && (
             <div className="flex flex-col gap-6">
-              <div className="border-b border-[#1A1A1A]/15 pb-3 flex items-center justify-between">
+              <div className="border-b border-[#766E5F]/15 pb-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="font-serif font-bold text-3xl text-[#111111]">Live Notifications</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-serif font-bold text-3xl text-[#201E19]">Live Notifications</h2>
+                    {liveNotifications.filter((n) => n.unread || !n.read).length > 0 && (
+                      <span className="text-xs font-mono font-bold bg-[#9F3028] text-[#E8DFC8] px-2 py-0.5 rounded-full">
+                        {liveNotifications.filter((n) => n.unread || !n.read).length} new
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs font-mono text-[#666666] uppercase mt-1">
                     Real-time alerts, market triggers and newsroom dispatches
                   </p>
                 </div>
                 <button
-                  onClick={() =>
-                    setLiveNotifications(liveNotifications.map((n) => ({ ...n, unread: false })))
-                  }
-                  className="text-xs font-mono text-[#A71919] hover:underline cursor-pointer"
+                  onClick={handleMarkAllNotificationsRead}
+                  className="text-xs font-mono text-[#9F3028] hover:underline cursor-pointer"
                 >
                   Mark all as read
                 </button>
               </div>
 
-              <div className="space-y-3">
-                {liveNotifications.map((notif) => (
-                  <div
-                    key={notif.id}
-                    className={`bg-[#FAF7F0] border rounded-xl p-4 flex items-start justify-between gap-4 transition-colors ${
-                      notif.unread ? "border-[#A71919]/50 bg-[#FBF6EE]" : "border-[#1A1A1A]/20"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg ${notif.unread ? "bg-[#A71919] text-white" : "bg-[#111111]/10 text-[#111111]"}`}>
-                        <Bell className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-mono font-bold uppercase bg-[#111111] text-white px-1.5 py-0.2 rounded">
-                            {notif.desk}
-                          </span>
-                          <span className="text-[11px] font-mono text-[#777777]">{notif.time}</span>
+              {liveNotifications.length === 0 ? (
+                <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
+                  <Bell className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
+                  <p className="font-serif text-lg text-[#39352D]">No notifications right now</p>
+                  <p className="text-xs text-[#777777] font-mono mt-1">
+                    Editorial dispatches and breaking alerts will appear here as they are published.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {liveNotifications.map((notif) => {
+                    const isUnread = notif.unread !== undefined ? notif.unread : !notif.read;
+                    return (
+                      <div
+                        key={notif._id || notif.id}
+                        className={`bg-[#EFE8D5] border rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-colors ${
+                          isUnread ? "border-[#9F3028]/50 bg-[#FBF6EE]" : "border-[#766E5F]/20"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <div
+                            className={`p-2 rounded-lg shrink-0 ${
+                              isUnread ? "bg-[#9F3028] text-white" : "bg-[#201E19]/10 text-[#201E19]"
+                            }`}
+                          >
+                            <Bell className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="text-[10px] font-mono font-bold uppercase bg-[#201E19] text-white px-1.5 py-0.2 rounded">
+                                {notif.desk || "NEWSROOM"}
+                              </span>
+                              <span className="text-[11px] font-mono text-[#777777]">{notif.time || "RECENT"}</span>
+                              {isUnread && (
+                                <span className="text-[9px] font-mono font-bold text-[#9F3028] uppercase tracking-wider">
+                                  ● UNREAD
+                                </span>
+                              )}
+                            </div>
+                            <h4
+                              onClick={() => handleOpenNotificationStory(notif)}
+                              className="text-sm font-serif font-semibold text-[#201E19] hover:text-[#9F3028] transition-colors cursor-pointer"
+                            >
+                              {notif.title}
+                            </h4>
+                            {notif.message && (
+                              <p className="text-xs text-[#666666] font-serif line-clamp-2 mt-0.5">
+                                {notif.message}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm font-serif font-semibold text-[#111111]">{notif.title}</p>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenNotificationStory(notif)}
+                            className="text-[11px] font-mono text-[#9F3028] hover:underline font-bold uppercase cursor-pointer"
+                          >
+                            Read
+                          </button>
+                          {isUnread && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleMarkNotificationRead(e, notif)}
+                              className="text-[11px] font-mono text-[#39352D] hover:text-[#201E19] cursor-pointer"
+                            >
+                              Mark read
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => handleDismissNotification(e, notif)}
+                            className="p-1 text-[#888888] hover:text-[#9F3028] cursor-pointer transition-colors"
+                            title="Dismiss notification"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           {/* TAB 6: SETTINGS */}
           {activeTab === "settings" && (
             <div className="flex flex-col gap-6">
-              <div className="border-b border-[#1A1A1A]/15 pb-3">
-                <h2 className="font-serif font-bold text-3xl text-[#111111]">Reader Settings</h2>
+              <div className="border-b border-[#766E5F]/15 pb-3">
+                <h2 className="font-serif font-bold text-3xl text-[#201E19]">Reader Settings</h2>
                 <p className="text-xs font-mono text-[#666666] uppercase mt-1">
                   Personalize your newspaper layout, frequency, and telemetry
                 </p>
               </div>
 
-              <div className="bg-[#FAF7F0] border border-[#1A1A1A]/20 rounded-xl p-6 space-y-6">
-                <div className="flex items-center justify-between pb-4 border-b border-[#1A1A1A]/10">
+              <div className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-6 space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-[#766E5F]/10">
                   <div>
-                    <h4 className="font-serif font-bold text-base text-[#111111]">Real-Time Feed Updates</h4>
+                    <h4 className="font-serif font-bold text-base text-[#201E19]">Real-Time Feed Updates</h4>
                     <p className="text-xs text-[#666666] font-mono mt-0.5">
                       Stream live market indicators and teletype bulletins continuously
                     </p>
@@ -1638,26 +2352,26 @@ export default function YourTimesDashboard({
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between pb-4 border-b border-[#1A1A1A]/10">
+                <div className="flex items-center justify-between pb-4 border-b border-[#766E5F]/10">
                   <div>
-                    <h4 className="font-serif font-bold text-base text-[#111111]">Default View On Launch</h4>
+                    <h4 className="font-serif font-bold text-base text-[#201E19]">Default View On Launch</h4>
                     <p className="text-xs text-[#666666] font-mono mt-0.5">
                       Open &ldquo;Your Times&rdquo; personalized dashboard when first visiting
                     </p>
                   </div>
-                  <span className="bg-[#111111] text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                  <span className="bg-[#201E19] text-white text-xs px-2.5 py-1 rounded-full font-bold">
                     Your Times
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-serif font-bold text-base text-[#111111]">Audio Dispatch Synthesizer</h4>
+                    <h4 className="font-serif font-bold text-base text-[#201E19]">Audio Dispatch Synthesizer</h4>
                     <p className="text-xs text-[#666666] font-mono mt-0.5">
                       High-fidelity acoustic speech reading for news articles
                     </p>
                   </div>
-                  <span className="bg-[#111111]/10 text-[#111111] text-xs px-2.5 py-1 rounded-full font-bold">
+                  <span className="bg-[#201E19]/10 text-[#201E19] text-xs px-2.5 py-1 rounded-full font-bold">
                     Ready
                   </span>
                 </div>
@@ -1672,16 +2386,16 @@ export default function YourTimesDashboard({
          ───────────────────────────────────────────────────────────── */}
       {/* Customize Interests Modal */}
       {isCustomizeOpen && (
-        <div className="fixed inset-0 z-50 bg-[#111111]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 bg-[#201E19]/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#EFE8D5] border-2 border-[#766E5F] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
             <button
               onClick={() => setIsCustomizeOpen(false)}
-              className="absolute top-4 right-4 p-1 rounded hover:bg-[#1A1A1A]/10 cursor-pointer"
+              className="absolute top-4 right-4 p-1 rounded hover:bg-[#766E5F]/10 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="font-serif font-bold text-2xl text-[#111111] mb-1">
+            <h3 className="font-serif font-bold text-2xl text-[#201E19] mb-1">
               Customize Your Times
             </h3>
             <p className="text-xs font-mono text-[#666666] mb-4">
@@ -1697,8 +2411,8 @@ export default function YourTimesDashboard({
                     onClick={() => toggleInterest(interest)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
                       isSelected
-                        ? "bg-[#111111] text-[#F2EEE5]"
-                        : "bg-[#ECE6D8] text-[#444444] hover:bg-[#E0D8C8]"
+                        ? "bg-[#201E19] text-[#E8DFC8]"
+                        : "bg-[#DFD5BC] text-[#39352D] hover:bg-[#E0D8C8]"
                     }`}
                   >
                     {isSelected && <Check className="w-3 h-3 text-emerald-400" />}
@@ -1711,7 +2425,7 @@ export default function YourTimesDashboard({
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setIsCustomizeOpen(false)}
-                className="bg-[#111111] text-[#F2EEE5] text-xs font-semibold px-5 py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
+                className="bg-[#201E19] text-[#E8DFC8] text-xs font-semibold px-5 py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
               >
                 Save Preferences
               </button>
@@ -1722,16 +2436,16 @@ export default function YourTimesDashboard({
 
       {/* Manage Topics Modal */}
       {isManageTopicsOpen && (
-        <div className="fixed inset-0 z-50 bg-[#111111]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 bg-[#201E19]/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#EFE8D5] border-2 border-[#766E5F] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
             <button
               onClick={() => setIsManageTopicsOpen(false)}
-              className="absolute top-4 right-4 p-1 rounded hover:bg-[#1A1A1A]/10 cursor-pointer"
+              className="absolute top-4 right-4 p-1 rounded hover:bg-[#766E5F]/10 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="font-serif font-bold text-2xl text-[#111111] mb-1">
+            <h3 className="font-serif font-bold text-2xl text-[#201E19] mb-1">
               Manage Your Topics
             </h3>
             <p className="text-xs font-mono text-[#666666] mb-4">
@@ -1747,11 +2461,11 @@ export default function YourTimesDashboard({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleAddTopic();
                 }}
-                className="bg-[#ECE6D8] border border-[#1A1A1A]/30 rounded-lg px-3 py-1.5 text-xs flex-1 focus:outline-none focus:border-[#111111]"
+                className="bg-[#DFD5BC] border border-[#766E5F]/30 rounded-lg px-3 py-1.5 text-xs flex-1 focus:outline-none focus:border-[#766E5F]"
               />
               <button
                 onClick={handleAddTopic}
-                className="bg-[#111111] text-[#F2EEE5] text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
+                className="bg-[#201E19] text-[#E8DFC8] text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
               >
                 Add
               </button>
@@ -1761,12 +2475,12 @@ export default function YourTimesDashboard({
               {userTopics.map((topic) => (
                 <div
                   key={topic}
-                  className="flex items-center justify-between p-2 rounded-lg bg-[#ECE6D8] text-xs font-mono"
+                  className="flex items-center justify-between p-2 rounded-lg bg-[#DFD5BC] text-xs font-mono"
                 >
                   <span>{topic}</span>
                   <button
                     onClick={() => handleRemoveTopic(topic)}
-                    className="text-[#A71919] hover:underline cursor-pointer"
+                    className="text-[#9F3028] hover:underline cursor-pointer"
                   >
                     Delete
                   </button>
@@ -1776,7 +2490,7 @@ export default function YourTimesDashboard({
 
             <button
               onClick={() => setIsManageTopicsOpen(false)}
-              className="w-full bg-[#111111] text-[#F2EEE5] text-xs font-semibold py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
+              className="w-full bg-[#201E19] text-[#E8DFC8] text-xs font-semibold py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
             >
               Done
             </button>
@@ -1786,35 +2500,35 @@ export default function YourTimesDashboard({
 
       {/* User Login Profile Modal */}
       {isLoginOpen && (
-        <div className="fixed inset-0 z-50 bg-[#111111]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative text-center">
+        <div className="fixed inset-0 z-50 bg-[#201E19]/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#EFE8D5] border-2 border-[#766E5F] rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative text-center">
             <button
               onClick={() => setIsLoginOpen(false)}
-              className="absolute top-4 right-4 p-1 rounded hover:bg-[#1A1A1A]/10 cursor-pointer"
+              className="absolute top-4 right-4 p-1 rounded hover:bg-[#766E5F]/10 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <div className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-[#1A1A1A] ring-2 ring-[#C5A059]/40 ring-offset-2 ring-offset-[#FAF7F0] bg-[#111111] flex items-center justify-center shadow-md">
-              <span className="font-serif font-bold text-2xl text-[#F2EEE5] select-none tracking-widest">
+            <div className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-[#766E5F] ring-2 ring-[#C5A059]/40 ring-offset-2 ring-offset-[#EFE8D5] bg-[#201E19] flex items-center justify-center shadow-md">
+              <span className="font-serif font-bold text-2xl text-[#E8DFC8] select-none tracking-widest">
                 {getInitials(currentUser.name)}
               </span>
             </div>
 
-            <h3 className="font-serif font-bold text-xl text-[#111111]">{currentUser.name}</h3>
+            <h3 className="font-serif font-bold text-xl text-[#201E19]">{currentUser.name}</h3>
             <p className="text-xs font-mono text-[#666666] mb-1">{currentUser.email}</p>
-            <span className="inline-block bg-[#111111] text-[#F2EEE5] text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase mb-4">
+            <span className="inline-block bg-[#201E19] text-[#E8DFC8] text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase mb-4">
               {currentUser.role || "PRO SUBSCRIBER"} • {currentUser.edition || "EDITION #001"}
             </span>
 
-            <div className="border-t border-[#1A1A1A]/15 pt-3 space-y-2 text-left text-xs font-mono">
-              <div className="flex justify-between py-1 border-b border-[#1A1A1A]/10">
+            <div className="border-t border-[#766E5F]/15 pt-3 space-y-2 text-left text-xs font-mono">
+              <div className="flex justify-between py-1 border-b border-[#766E5F]/10">
                 <span className="text-[#666666]">Subscription</span>
-                <span className="font-bold text-[#111111]">Annual Broadsheet</span>
+                <span className="font-bold text-[#201E19]">Annual Broadsheet</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-[#1A1A1A]/10">
+              <div className="flex justify-between py-1 border-b border-[#766E5F]/10">
                 <span className="text-[#666666]">Clippings Saved</span>
-                <span className="font-bold text-[#111111]">{safeClippings.length}</span>
+                <span className="font-bold text-[#201E19]">{safeClippings.length}</span>
               </div>
             </div>
 
@@ -1824,7 +2538,7 @@ export default function YourTimesDashboard({
                   setIsLoginOpen(false);
                   onLogout?.();
                 }}
-                className="w-full border border-[#A71919] text-[#A71919] hover:bg-[#A71919] hover:text-[#F2EEE5] text-xs font-semibold py-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono uppercase tracking-wider"
+                className="w-full border border-[#9F3028] text-[#9F3028] hover:bg-[#9F3028] hover:text-[#E8DFC8] text-xs font-semibold py-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono uppercase tracking-wider"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Log Out / Switch Account</span>
@@ -1832,7 +2546,7 @@ export default function YourTimesDashboard({
 
               <button
                 onClick={() => setIsLoginOpen(false)}
-                className="w-full bg-[#111111] text-[#F2EEE5] text-xs font-semibold py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
+                className="w-full bg-[#201E19] text-[#E8DFC8] text-xs font-semibold py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
               >
                 Close
               </button>

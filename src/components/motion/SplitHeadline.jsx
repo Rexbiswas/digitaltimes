@@ -90,7 +90,7 @@ export default function SplitHeadline({
     <Tag
       ref={containerRef}
       onClick={onClick}
-      className={`font-serif font-black uppercase tracking-tight text-[#111111] ${className}`}
+      className={`font-serif font-black uppercase tracking-tight text-[#201E19] ${className}`}
       data-cursor={dataCursor}
     >
       {words.map((word, index) => (

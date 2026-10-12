@@ -17,19 +17,21 @@
 }
 
 :root {
-  --paper: #F2EEE5;
-  --paper-card: #ECE6D8;
-  --paper-dark: #E4DDD0;
-  --paper-grain: #FAF7F0;
-  --ink: #111111;
-  --ink-muted: #4A4A4A;
-  --ink-light: #767676;
-  --ink-faint: #A5A5A5;
-  --rule: #1A1A1A;
-  --rule-light: #D4CDBC;
-  --rule-hairline: rgba(26, 26, 26, 0.2);
-  --breaking-red: #A71919;
-  --breaking-red-light: #FCE8E8;
+  --paper: #E8DFC8;
+  --paper-card: #DFD5BC;
+  --paper-dark: #D7CCB2;
+  --paper-grain: #EFE8D5;
+  --ink: #201E19;
+  --ink-headline: #201E19;
+  --ink-body: #39352D;
+  --ink-muted: #39352D;
+  --ink-light: #5A5448;
+  --ink-faint: #766E5F;
+  --rule: #766E5F;
+  --rule-light: #A39B8B;
+  --rule-hairline: rgba(118, 110, 95, 0.35);
+  --breaking-red: #9F3028;
+  --breaking-red-light: #F7E7E5;
   --font-serif: var(--font-playfair), Georgia, serif;
   --font-body: var(--font-newsreader), "Times New Roman", serif;
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
@@ -41,10 +43,14 @@
   --color-paper: var(--paper);
   --color-paper-card: var(--paper-card);
   --color-paper-dark: var(--paper-dark);
+  --color-paper-grain: var(--paper-grain);
   --color-ink: var(--ink);
+  --color-ink-headline: var(--ink-headline);
+  --color-ink-body: var(--ink-body);
   --color-ink-muted: var(--ink-muted);
   --color-ink-light: var(--ink-light);
   --color-rule: var(--rule);
+  --color-rule-light: var(--rule-light);
   --color-breaking: var(--breaking-red);
   --font-serif: var(--font-serif);
   --font-body: var(--font-body);
@@ -62,8 +68,8 @@
 .paper-texture-bg {
   background-color: var(--paper);
   background-image:
-    radial-gradient(rgba(17, 17, 17, 0.04) 1px, transparent 0),
-    radial-gradient(rgba(17, 17, 17, 0.02) 1px, transparent 0);
+    radial-gradient(rgba(32, 30, 25, 0.04) 1px, transparent 0),
+    radial-gradient(rgba(32, 30, 25, 0.02) 1px, transparent 0);
   background-size: 24px 24px, 12px 12px;
   background-position: 0 0, 12px 12px;
 }
@@ -95,20 +101,20 @@
 }
 
 .rule-hairline {
-  border-bottom: 1px solid rgba(26, 26, 26, 0.25);
+  border-bottom: 1px solid rgba(118, 110, 95, 0.35);
 }
 
 .rule-dashed {
-  border-bottom: 1px dashed rgba(26, 26, 26, 0.4);
+  border-bottom: 1px dashed rgba(118, 110, 95, 0.5);
 }
 
 /* Vertical column rules for broadsheet layouts */
 .column-rule-r {
-  border-right: 1px solid rgba(26, 26, 26, 0.25);
+  border-right: 1px solid rgba(118, 110, 95, 0.35);
 }
 
 .column-rule-l {
-  border-left: 1px solid rgba(26, 26, 26, 0.25);
+  border-left: 1px solid rgba(118, 110, 95, 0.35);
 }
 
 /* Drop Cap styling */
@@ -128,7 +134,7 @@
 .newspaper-columns-2 {
   column-count: 2;
   column-gap: 2.25rem;
-  column-rule: 1px solid rgba(26, 26, 26, 0.2);
+  column-rule: 1px solid rgba(118, 110, 95, 0.35);
   text-align: justify;
   hyphens: auto;
 }
@@ -136,7 +142,7 @@
 .newspaper-columns-3 {
   column-count: 3;
   column-gap: 2rem;
-  column-rule: 1px solid rgba(26, 26, 26, 0.2);
+  column-rule: 1px solid rgba(118, 110, 95, 0.35);
   text-align: justify;
   hyphens: auto;
 }
@@ -226,12 +232,12 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(26, 26, 26, 0.25);
+  background: rgba(118, 110, 95, 0.35);
   border-radius: 3px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(26, 26, 26, 0.5);
+  background: rgba(118, 110, 95, 0.6);
 }
 
 /* Custom newspaper page scrollbar for main window */
@@ -246,7 +252,7 @@ body::-webkit-scrollbar-track {
 }
 
 body::-webkit-scrollbar-thumb {
-  background: var(--ink-muted);
+  background: var(--rule);
 }
 
 body::-webkit-scrollbar-thumb:hover {
@@ -284,9 +290,9 @@ html.lenis body {
   height: 34px;
   padding: 0 16px;
   border-radius: 9999px;
-  border: 1.5px solid rgba(26, 26, 26, 0.28);
-  background-color: #FAF7F0;
-  color: #222222;
+  border: 1.5px solid rgba(118, 110, 95, 0.4);
+  background-color: var(--paper-grain);
+  color: var(--ink-body);
   font-family: var(--font-sans);
   font-size: 0.72rem;
   font-weight: 700;
@@ -300,19 +306,89 @@ html.lenis body {
 }
 
 .filter-pill:hover {
-  background-color: #EAE4D6;
-  border-color: rgba(26, 26, 26, 0.5);
-  color: #111111;
+  background-color: var(--paper-card);
+  border-color: var(--rule);
+  color: var(--ink-headline);
   transform: scale(1.01);
 }
 
 .filter-pill.active {
-  background-color: #111111;
-  border-color: #111111;
-  color: #F2EEE5;
+  background-color: var(--ink-headline);
+  border-color: var(--ink-headline);
+  color: var(--paper);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
   transform: scale(1.02);
 }
+
+/* ── Newspaper Loading & Skeleton Utilities ── */
+@keyframes inkPulse {
+  0%, 100% {
+    opacity: 0.58;
+  }
+  50% {
+    opacity: 0.94;
+  }
+}
+
+@keyframes paperShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes teletypeBlink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+@keyframes linotypeSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-ink-pulse {
+  animation: inkPulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.newspaper-skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(223, 213, 188, 0.7) 0%,
+    rgba(239, 232, 213, 0.95) 50%,
+    rgba(223, 213, 188, 0.7) 100%
+  );
+  background-size: 200% 100%;
+  animation: paperShimmer 2.4s infinite ease-in-out;
+}
+
+.animate-teletype-blink {
+  animation: teletypeBlink 1s infinite;
+}
+
+.animate-linotype-spin {
+  animation: linotypeSpin 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ink-pulse,
+  .newspaper-skeleton-shimmer,
+  .animate-teletype-blink,
+  .animate-linotype-spin {
+    animation: none !important;
+  }
+}
+
 
 /* Print Styles */
 @media print {

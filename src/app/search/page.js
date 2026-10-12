@@ -8,7 +8,6 @@ import {
   X, 
   ArrowLeft, 
   Bookmark, 
-  Printer, 
   Share2, 
   SlidersHorizontal,
   Clock,
@@ -61,17 +60,17 @@ function SearchContent() {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
-  const [clippings, setClippings] = useState(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("times_clippings");
-        return saved ? JSON.parse(saved) : [];
-      } catch (e) {
-        return [];
+  const [clippings, setClippings] = useState([]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("times_clippings");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setClippings(parsed);
       }
-    }
-    return [];
-  });
+    } catch (e) {}
+  }, []);
 
   const saveClipping = (article) => {
     if (!article) return;
@@ -140,24 +139,24 @@ function SearchContent() {
   }, [query, activeTab]);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-[#F7F4EE] text-[#111111] antialiased overflow-hidden selection:bg-[#111111] selection:text-[#F7F4EE]">
+    <div className="h-screen w-full flex flex-col bg-[#F7F4EE] text-[#201E19] antialiased overflow-hidden selection:bg-[#201E19] selection:text-[#F7F4EE]">
       {/* 1. FIXED TOP UTILITY NAVIGATION STRIP */}
-      <nav className="w-full bg-[#EFEAE0] border-b border-[#1A1A1A]/30 shrink-0 z-40 shadow-2xs select-none">
+      <nav className="w-full bg-[#EFEAE0] border-b border-[#766E5F]/30 shrink-0 z-40 shadow-2xs select-none">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-between text-xs font-mono">
           <Link
             href="/"
-            className="flex items-center gap-1.5 font-bold text-[#111111] hover:text-[#A71919] transition-colors uppercase tracking-wider group"
+            className="flex items-center gap-1.5 font-bold text-[#201E19] hover:text-[#9F3028] transition-colors uppercase tracking-wider group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
             <span>RETURN TO BROADSHEET</span>
           </Link>
 
-          <div className="flex items-center gap-3 sm:gap-5 text-[#555555]">
-            <span className="hidden sm:inline font-bold text-[#111111]">
+          <div className="flex items-center gap-3 sm:gap-5 text-[#39352D]">
+            <span className="hidden sm:inline font-bold text-[#201E19]">
               THE DIGITAL TIMES ARCHIVES
             </span>
             <span className="hidden sm:inline">•</span>
-            <div className="flex items-center gap-1 sm:gap-1.5 text-[#111111] bg-[#111111]/5 px-2 py-0.5 rounded text-[10px] sm:text-xs font-mono font-bold whitespace-nowrap shadow-2xs">
+            <div className="flex items-center gap-1 sm:gap-1.5 text-[#201E19] bg-[#201E19]/5 px-2 py-0.5 rounded text-[10px] sm:text-xs font-mono font-bold whitespace-nowrap shadow-2xs">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <span suppressHydrationWarning className="flex items-center gap-1">
                 {currentDateTime.time ? (
@@ -184,16 +183,16 @@ function SearchContent() {
             <div className="flex items-center gap-2 text-[10px] sm:text-xs font-mono tracking-widest text-[#777777] uppercase font-bold mb-0.5">
               <span>EDITORIAL DISPATCH ARCHIVES</span>
               <span>•</span>
-              <span className="text-[#A71919]">INDEXED REPOSITORY</span>
+              <span className="text-[#9F3028]">INDEXED REPOSITORY</span>
             </div>
-            <h1 className="font-serif font-black text-3xl sm:text-4xl md:text-5xl tracking-tight text-[#111111] uppercase leading-none">
+            <h1 className="font-serif font-black text-3xl sm:text-4xl md:text-5xl tracking-tight text-[#201E19] uppercase leading-none">
               SEARCH
             </h1>
           </div>
 
           {/* The Vintage Editorial Search Input Container */}
           <div className="relative mb-3">
-            <div className="flex items-center bg-[#FDFBF7] border-2 border-[#1A1A1A]/20 hover:border-[#1A1A1A]/60 focus-within:border-[#111111] rounded-2xl shadow-xs p-1 sm:p-1.5 transition-all">
+            <div className="flex items-center bg-[#FDFBF7] border-2 border-[#766E5F]/20 hover:border-[#766E5F]/60 focus-within:border-[#766E5F] rounded-2xl shadow-xs p-1 sm:p-1.5 transition-all">
               {/* Left Magnifying Glass Icon */}
               <div className="pl-2 sm:pl-3 pr-2 text-[#777777]">
                 <Search className="w-5 h-5 text-[#666666]" />
@@ -205,7 +204,7 @@ function SearchContent() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search articles, headlines, topics, dispatches..."
-                className="w-full bg-transparent font-serif text-sm sm:text-base md:text-lg text-[#111111] placeholder:text-[#999999] placeholder:font-serif outline-none py-1"
+                className="w-full bg-transparent font-serif text-sm sm:text-base md:text-lg text-[#201E19] placeholder:text-[#999999] placeholder:font-serif outline-none py-1"
                 autoFocus
               />
 
@@ -214,7 +213,7 @@ function SearchContent() {
                 <button
                   type="button"
                   onClick={() => setQuery("")}
-                  className="p-1 text-[#888888] hover:text-[#111111] hover:bg-[#ECE6D8] rounded-full transition-colors mr-1 cursor-pointer"
+                  className="p-1 text-[#888888] hover:text-[#201E19] hover:bg-[#DFD5BC] rounded-full transition-colors mr-1 cursor-pointer"
                   title="Clear query"
                 >
                   <X className="w-4 h-4" />
@@ -224,7 +223,7 @@ function SearchContent() {
               {/* Right Dark Search Button */}
               <button
                 type="button"
-                className="bg-[#111111] hover:bg-[#252525] active:scale-95 text-white p-2.5 sm:p-3 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-sm"
+                className="bg-[#201E19] hover:bg-[#252525] active:scale-95 text-white p-2.5 sm:p-3 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-sm"
                 aria-label="Execute search"
               >
                 <Search className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
@@ -242,13 +241,13 @@ function SearchContent() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`pb-2 text-xs sm:text-sm font-bold tracking-wider uppercase transition-all relative cursor-pointer ${
                     isActive
-                      ? "text-[#111111] font-black"
-                      : "text-[#777777] hover:text-[#111111]"
+                      ? "text-[#201E19] font-black"
+                      : "text-[#777777] hover:text-[#201E19]"
                   }`}
                 >
                   {tab.label}
                   {isActive && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#111111]" />
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#201E19]" />
                   )}
                 </button>
               );
@@ -266,8 +265,8 @@ function SearchContent() {
                 onClick={() => setQuery(pill)}
                 className={`px-2.5 py-0.5 sm:py-1 rounded-full border text-[10px] sm:text-[11px] uppercase tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
                   query.toLowerCase() === pill.toLowerCase()
-                    ? "bg-[#111111] text-[#F7F4EE] border-[#111111]"
-                    : "bg-[#EFEAE0]/80 text-[#444444] border-[#D5CFC2] hover:border-[#111111] hover:text-[#111111]"
+                    ? "bg-[#201E19] text-[#F7F4EE] border-[#766E5F]"
+                    : "bg-[#EFEAE0]/80 text-[#39352D] border-[#D5CFC2] hover:border-[#766E5F] hover:text-[#201E19]"
                 }`}
               >
                 {pill}
@@ -282,7 +281,7 @@ function SearchContent() {
             </span>
             {query && (
               <span className="font-mono text-[11px] text-[#777777]">
-                FOR &ldquo;<span className="text-[#111111] font-semibold">{query}</span>&rdquo;
+                FOR &ldquo;<span className="text-[#201E19] font-semibold">{query}</span>&rdquo;
               </span>
             )}
           </div>
@@ -294,8 +293,8 @@ function SearchContent() {
         <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4">
           {filteredStories.length === 0 ? (
             <div className="py-16 text-center border-2 border-dashed border-[#D5CFC2] rounded-xl p-8 bg-[#FAF8F3]">
-              <Search className="w-8 h-8 text-[#A71919] mx-auto mb-3 opacity-60" />
-              <p className="font-serif font-bold text-lg text-[#111111] mb-1">
+              <Search className="w-8 h-8 text-[#9F3028] mx-auto mb-3 opacity-60" />
+              <p className="font-serif font-bold text-lg text-[#201E19] mb-1">
                 No matching dispatches found
               </p>
               <p className="font-mono text-xs text-[#777777] max-w-md mx-auto mb-4">
@@ -303,7 +302,7 @@ function SearchContent() {
               </p>
               <button
                 onClick={() => setQuery("")}
-                className="px-4 py-2 bg-[#111111] text-[#F7F4EE] text-xs font-mono font-bold uppercase rounded hover:bg-[#333333] transition-colors cursor-pointer"
+                className="px-4 py-2 bg-[#201E19] text-[#F7F4EE] text-xs font-mono font-bold uppercase rounded hover:bg-[#333333] transition-colors cursor-pointer"
               >
                 Clear Search
               </button>
@@ -313,19 +312,23 @@ function SearchContent() {
               <article
                 key={story.id}
                 onClick={() => setSelectedArticle(story)}
-                className="flex items-start gap-3.5 sm:gap-5 p-2.5 sm:p-3 -mx-2 rounded-xl hover:bg-[#ECE6D8]/60 transition-all cursor-pointer group border-b border-[#1A1A1A]/10 last:border-b-0"
+                className="flex items-start gap-3.5 sm:gap-5 p-2.5 sm:p-3 -mx-2 rounded-xl hover:bg-[#DFD5BC]/60 transition-all cursor-pointer group border-b border-[#766E5F]/10 last:border-b-0"
               >
                 {/* Thumbnail Image on Left with Rounded Corners */}
-                <div className="relative w-24 sm:w-36 md:w-44 h-18 sm:h-24 md:h-26 rounded-lg overflow-hidden flex-shrink-0 bg-[#E0D9CB] border border-[#1A1A1A]/15 shadow-2xs">
-                  {story.image ? (
+                <div className="relative w-24 sm:w-36 md:w-44 h-18 sm:h-24 md:h-26 rounded-lg overflow-hidden flex-shrink-0 bg-[#E0D9CB] border border-[#766E5F]/15 shadow-2xs">
+                  {story.urlToImage || story.image ? (
                     <img
-                      src={story.image}
+                      src={story.urlToImage || story.image}
                       alt={story.headline}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "/window.svg";
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       loading="lazy"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-[#111111] text-[#F7F4EE] font-masthead text-lg">
+                    <div className="w-full h-full flex items-center justify-center bg-[#201E19] text-[#F7F4EE] font-masthead text-lg">
                       DT
                     </div>
                   )}
@@ -334,13 +337,13 @@ function SearchContent() {
                 {/* Article Info on Right */}
                 <div className="flex-1 min-w-0">
                   {/* Headline */}
-                  <h3 className="font-serif font-bold text-base sm:text-lg md:text-xl text-[#111111] group-hover:text-[#A71919] transition-colors leading-snug line-clamp-2">
+                  <h3 className="font-serif font-bold text-base sm:text-lg md:text-xl text-[#201E19] group-hover:text-[#9F3028] transition-colors leading-snug line-clamp-2">
                     {story.headline}
                   </h3>
 
                   {/* Kicker / Metadata Line (e.g. "AI • 2 MIN AGO") */}
                   <div className="text-[10px] sm:text-xs font-mono uppercase tracking-wider text-[#777777] font-semibold flex items-center gap-1.5 my-1">
-                    <span className="text-[#A71919] font-bold">
+                    <span className="text-[#9F3028] font-bold">
                       {story.desk || "EDITORIAL"}
                     </span>
                     <span>•</span>
@@ -353,7 +356,7 @@ function SearchContent() {
                     {story.author && (
                       <>
                         <span className="hidden md:inline">•</span>
-                        <span className="hidden md:inline text-[#555555]">
+                        <span className="hidden md:inline text-[#39352D]">
                           {story.author}
                         </span>
                       </>
@@ -361,7 +364,7 @@ function SearchContent() {
                   </div>
 
                   {/* Excerpt / Snippet (Italic Editorial Body) */}
-                  <p className="font-serif italic text-xs sm:text-sm text-[#555555] line-clamp-2 leading-relaxed">
+                  <p className="font-serif italic text-xs sm:text-sm text-[#39352D] line-clamp-2 leading-relaxed">
                     {story.deck || story.leadParagraph}
                   </p>
                 </div>
@@ -389,7 +392,7 @@ export default function SearchPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center p-6">
-          <div className="font-serif text-lg text-[#111111] animate-pulse">
+          <div className="font-serif text-lg text-[#201E19] animate-pulse">
             Loading Digital Times Archive Search...
           </div>
         </div>

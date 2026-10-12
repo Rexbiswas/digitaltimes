@@ -4,11 +4,15 @@ import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { webDeskData } from "@/data/newspaperData";
-import { Terminal, ArrowRight } from "lucide-react";
+import { Terminal, ArrowRight, Play } from "lucide-react";
 import SplitHeadline from "@/components/motion/SplitHeadline";
 
-export default function WebScene({ onOpenStory }) {
-  const { lead, frameworkMetrics } = webDeskData;
+export default function WebScene({ onOpenStory, articles }) {
+  const currentLead =
+    articles && articles[0] ? { ...webDeskData.lead, ...articles[0] } : webDeskData.lead;
+  const lead = currentLead;
+  const frameworkMetrics = webDeskData.frameworkMetrics;
+
   const containerRef = useRef(null);
   const codeBoxRef = useRef(null);
   const metricsRef = useRef([]);
@@ -71,38 +75,38 @@ export default function WebScene({ onOpenStory }) {
     <section
       id="web"
       ref={containerRef}
-      className="w-full bg-[#F2EEE5] py-12 border-b border-[#1A1A1A] select-none scroll-mt-14 sm:scroll-mt-16"
+      className="w-full bg-[#E8DFC8] py-12 border-b border-[#766E5F] select-none scroll-mt-14 sm:scroll-mt-16"
     >
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
         {/* Department Header */}
-        <div className="border-t-4 border-b-2 border-[#1A1A1A] py-2 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+        <div className="border-t-4 border-b-2 border-[#766E5F] py-2 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
           <div>
-            <span className="font-mono text-xs tracking-widest text-[#A71919] uppercase font-bold">
+            <span className="font-mono text-xs tracking-widest text-[#9F3028] uppercase font-bold">
               SYSTEMS, PROTOCOLS & CLIENT ARCHITECTURE
             </span>
-            <h3 className="font-serif font-black text-2xl sm:text-4xl text-[#111111] uppercase tracking-tight">
+            <h3 className="font-serif font-black text-2xl sm:text-4xl text-[#201E19] uppercase tracking-tight">
               THE WEB DESK
             </h3>
           </div>
-          <div className="text-xs font-mono text-[#555555] flex flex-wrap items-center gap-2 sm:gap-4 uppercase font-bold">
-            <span className="border-b border-[#111111]">REACT</span>
+          <div className="text-xs font-mono text-[#39352D] flex flex-wrap items-center gap-2 sm:gap-4 uppercase font-bold">
+            <span className="border-b border-[#766E5F]">REACT</span>
             <span>•</span>
-            <span className="border-b border-[#111111]">NEXT.JS</span>
+            <span className="border-b border-[#766E5F]">NEXT.JS</span>
             <span>•</span>
-            <span className="border-b border-[#111111]">JAVASCRIPT</span>
+            <span className="border-b border-[#766E5F]">JAVASCRIPT</span>
             <span>•</span>
-            <span className="border-b border-[#111111]">BROWSERS</span>
+            <span className="border-b border-[#766E5F]">BROWSERS</span>
             <span>•</span>
-            <span className="border-b border-[#111111]">CSS</span>
+            <span className="border-b border-[#766E5F]">CSS</span>
           </div>
         </div>
 
         {/* Dense Technical Newspaper Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Main Story & Technical Analysis (7 columns) */}
-          <div className="lg:col-span-7 lg:pr-6 lg:border-r border-[#1A1A1A]/30">
-            <div className="flex items-center justify-between text-[11px] font-mono text-[#555555] mb-1">
-              <span className="text-[#A71919] font-bold uppercase tracking-wider">
+          <div className="lg:col-span-7 lg:pr-6 lg:border-r border-[#766E5F]/30">
+            <div className="flex items-center justify-between text-[11px] font-mono text-[#39352D] mb-1">
+              <span className="text-[#9F3028] font-bold uppercase tracking-wider">
                 ARCHITECTURE CRITIQUE
               </span>
               <span>{lead.page}</span>
@@ -111,35 +115,58 @@ export default function WebScene({ onOpenStory }) {
             <SplitHeadline
               text={lead.headline}
               as="h4"
-              className="text-3xl sm:text-4xl md:text-5xl leading-[1.02] mb-3 hover:text-[#A71919] transition-colors cursor-pointer"
+              className="text-3xl sm:text-4xl md:text-5xl leading-[1.02] mb-3 hover:text-[#9F3028] transition-colors cursor-pointer"
               onClick={() => onOpenStory(lead)}
             />
 
-            <p className="font-serif text-base sm:text-lg text-[#333333] leading-relaxed mb-4">
+            <p className="font-serif text-base sm:text-lg text-[#39352D] leading-relaxed mb-4">
               {lead.deck}
             </p>
 
-            <div className="text-xs font-mono text-[#666666] mb-4 pb-2 border-b border-[#1A1A1A]/30">
+            <div className="text-xs font-mono text-[#666666] mb-4 pb-2 border-b border-[#766E5F]/30">
               {lead.author} • {lead.readTime} • SAN FRANCISCO
             </div>
 
             <p className="font-serif text-[15px] leading-[1.65] text-[#222222] mb-4 text-justify">
-              {lead.body}
+              {lead.body || lead.leadParagraph}
             </p>
+
+            {(lead.urlToImage || lead.image) && (
+              <div
+                onClick={() => onOpenStory(lead)}
+                className="relative w-full h-52 sm:h-64 my-4 border border-[#766E5F] overflow-hidden bg-[#201E19] group cursor-pointer"
+              >
+                <img
+                  src={lead.urlToImage || lead.image || "/window.svg"}
+                  alt={lead.headline}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = "/window.svg";
+                  }}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 filter contrast-[1.08]"
+                />
+                {lead.video && (
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-xs bg-[#201E19]/90 text-[#E8DFC8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 border border-white/20">
+                    <Play className="w-2.5 h-2.5 fill-[#9F3028] text-[#9F3028]" />
+                    <span>VIDEO DISPATCH</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Tiny Code Snippet as an Editorial Woodcut / Etching Element */}
             <div
               ref={codeBoxRef}
-              className="my-6 border-2 border-[#1A1A1A] bg-[#ECE6D8] p-3 shadow-xs will-change-transform"
+              className="my-6 border-2 border-[#766E5F] bg-[#DFD5BC] p-3 shadow-xs will-change-transform"
             >
-              <div className="flex items-center justify-between border-b border-[#1A1A1A] pb-1.5 mb-2 font-mono text-[10px] text-[#111111] font-bold">
+              <div className="flex items-center justify-between border-b border-[#766E5F] pb-1.5 mb-2 font-mono text-[10px] text-[#201E19] font-bold">
                 <span className="flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-[#A71919]" />
+                  <Terminal className="w-3.5 h-3.5 text-[#9F3028]" />
                   EXHIBIT B: DRAFT SPECIFICATION (RFC-9482)
                 </span>
-                <span className="text-[#555555]">[TYPESCRIPT CONTRACT]</span>
+                <span className="text-[#39352D]">[TYPESCRIPT CONTRACT]</span>
               </div>
-              <pre className="font-mono text-[11px] leading-relaxed text-[#111111] overflow-x-auto no-scrollbar scrollbar-none p-2 bg-[#F2EEE5] border border-[#1A1A1A]/30">
+              <pre className="font-mono text-[11px] leading-relaxed text-[#201E19] overflow-x-auto no-scrollbar scrollbar-none p-2 bg-[#E8DFC8] border border-[#766E5F]/30">
                 <code>{lead.codeSnippet}</code>
               </pre>
               <div className="mt-1.5 text-[9px] font-mono text-[#666666] italic">
@@ -149,7 +176,7 @@ export default function WebScene({ onOpenStory }) {
 
             <button
               onClick={() => onOpenStory(lead)}
-              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#111111] hover:text-[#A71919] border border-[#111111] px-3.5 py-1.5 hover:bg-[#111111] hover:text-[#F2EEE5] transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#201E19] hover:text-[#9F3028] border border-[#766E5F] px-3.5 py-1.5 hover:bg-[#201E19] hover:text-[#E8DFC8] transition-all cursor-pointer"
               data-cursor="READ"
             >
               <span>Examine Specification</span>
@@ -159,12 +186,12 @@ export default function WebScene({ onOpenStory }) {
 
           {/* Right Column: Performance Telemetry & Web Benchmarks (5 columns) */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="border-2 border-[#1A1A1A] p-4 bg-[#ECE6D8]">
-              <div className="border-b border-[#1A1A1A] pb-2 mb-3 flex items-center justify-between">
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#111111]">
+            <div className="border-2 border-[#766E5F] p-4 bg-[#DFD5BC]">
+              <div className="border-b border-[#766E5F] pb-2 mb-3 flex items-center justify-between">
+                <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#201E19]">
                   CLIENT COMPILATION EFFICIENCY
                 </span>
-                <span className="font-mono text-[9px] bg-[#A71919] text-[#F2EEE5] px-1 font-bold">
+                <span className="font-mono text-[9px] bg-[#9F3028] text-[#E8DFC8] px-1 font-bold">
                   2026 AUDIT
                 </span>
               </div>
@@ -174,17 +201,17 @@ export default function WebScene({ onOpenStory }) {
                   <div
                     key={i}
                     ref={(node) => (metricsRef.current[i] = node)}
-                    className="border-b border-[#1A1A1A]/20 pb-3 last:border-b-0 will-change-transform"
+                    className="border-b border-[#766E5F]/20 pb-3 last:border-b-0 will-change-transform"
                   >
                     <div className="flex items-baseline justify-between">
-                      <span className="font-mono text-xs font-bold text-[#111111]">
+                      <span className="font-mono text-xs font-bold text-[#201E19]">
                         {metric.name}
                       </span>
-                      <span className="font-mono text-lg font-black text-[#A71919]">
+                      <span className="font-mono text-lg font-black text-[#9F3028]">
                         {metric.value}
                       </span>
                     </div>
-                    <div className="text-[11px] font-serif text-[#555555] italic">
+                    <div className="text-[11px] font-serif text-[#39352D] italic">
                       {metric.label}
                     </div>
                   </div>
@@ -193,14 +220,14 @@ export default function WebScene({ onOpenStory }) {
             </div>
 
             {/* Editorial Technical Column */}
-            <div className="p-4 border border-[#1A1A1A] bg-[#F2EEE5]">
-              <div className="text-[10px] font-mono text-[#A71919] font-bold uppercase tracking-widest mb-1">
+            <div className="p-4 border border-[#766E5F] bg-[#E8DFC8]">
+              <div className="text-[10px] font-mono text-[#9F3028] font-bold uppercase tracking-widest mb-1">
                 HISTORICAL CRITIQUE
               </div>
-              <h5 className="font-serif font-bold text-lg text-[#111111] uppercase leading-tight mb-2">
+              <h5 className="font-serif font-bold text-lg text-[#201E19] uppercase leading-tight mb-2">
                 The Thirty-Year Arc of the Hypertext Protocol
               </h5>
-              <p className="font-serif text-xs leading-relaxed text-[#333333] text-justify">
+              <p className="font-serif text-xs leading-relaxed text-[#39352D] text-justify">
                 When Sir Tim Berners-Lee published the first browser in 1991, document semantics reigned supreme. The intermediate era of giant JavaScript application state was an ephemeral deviation; with WebAssembly and agentic compilation, documents once again communicate purely through structural meaning.
               </p>
             </div>

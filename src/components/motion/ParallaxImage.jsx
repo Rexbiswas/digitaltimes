@@ -59,21 +59,25 @@ export default function ParallaxImage({
       <div
         ref={containerRef}
         onClick={onClick}
-        className={`relative overflow-hidden border border-[#1A1A1A] bg-[#111111] cursor-pointer group ${className}`}
+        className={`relative overflow-hidden border border-[#766E5F] bg-[#201E19] cursor-pointer group ${className}`}
         data-cursor={dataCursor}
       >
         <img
           ref={imageRef}
-          src={src}
+          src={src || "/window.svg"}
           alt={alt}
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = "/window.svg";
+          }}
           className="w-full h-full object-cover filter contrast-[1.08] saturate-[0.88] will-change-transform transform-gpu"
         />
         {/* Newspaper halftone and subtle vignette gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#111111]/60 via-transparent to-transparent pointer-events-none opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#201E19]/60 via-transparent to-transparent pointer-events-none opacity-80" />
       </div>
 
       {(caption || credit) && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] font-mono text-[#555555] pt-1.5 px-0.5 gap-1 border-b border-[#1A1A1A]/20">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] font-mono text-[#39352D] pt-1.5 px-0.5 gap-1 border-b border-[#766E5F]/20">
           {caption && <span className="italic">{caption}</span>}
           {credit && (
             <span className="uppercase text-[10px] text-[#777777] font-bold shrink-0">

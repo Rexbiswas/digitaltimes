@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import SmoothScrollProvider from "@/components/SmoothScrollProvider";
 import EditorialCursor from "@/components/EditorialCursor";
@@ -23,7 +23,7 @@ import CultureScene from "@/components/newspaper/CultureScene";
 import BusinessScene from "@/components/newspaper/BusinessScene";
 import FutureScene from "@/components/newspaper/FutureScene";
 
-// Modals, Drawers & Footer
+// Modals, Drawers, Toasters & Footer
 import ArticleModal from "@/components/ArticleModal";
 import ClippingsDrawer from "@/components/ClippingsDrawer";
 import SearchModal from "@/components/SearchModal";
@@ -31,11 +31,23 @@ import NewspaperFooter from "@/components/NewspaperFooter";
 import NewsroomUpdateToast from "@/components/NewsroomUpdateToast";
 import YourTimesDashboard from "@/components/YourTimesDashboard";
 import EditorialAuthScreen from "@/components/EditorialAuthScreen";
+import EditorialToaster from "@/components/EditorialToaster";
+import { ToastProvider, useToast } from "@/context/ToastContext";
 
 import { allArticles, leadStory } from "@/data/newspaperData";
 
 export default function Home() {
+  return (
+    <ToastProvider>
+      <EditorialBroadsheetMain />
+    </ToastProvider>
+  );
+}
+
+function EditorialBroadsheetMain() {
   const router = useRouter();
+  const { toast } = useToast();
+
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const [viewMode, setViewMode] = useState("dashboard"); // "dashboard" | "broadsheet"
@@ -46,6 +58,82 @@ export default function Home() {
   const [clippings, setClippings] = useState([]);
   const [paperTheme, setPaperTheme] = useState("morning"); // morning, sepia, evening
   const [typeScale, setTypeScale] = useState("standard"); // compact, standard, broadsheet
+  const [liveArticles, setLiveArticles] = useState(allArticles);
+  const [liveLeadStory, setLiveLeadStory] = useState(leadStory);
+  const [liveHeadlines, setLiveHeadlines] = useState([]);
+
+  // Fetch fresh live news from NewsAPI/Backend when broadsheet opens
+  useEffect(() => {
+    async function loadBroadsheetNews() {
+      try {
+        const res = await fetch("/api/articles?limit=50", { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.articles && json.articles.length > 0) {
+            setLiveArticles(json.articles);
+            if (json.leadStory) {
+              setLiveLeadStory(json.leadStory);
+            }
+            const headlines = json.articles.slice(0, 10).map((a) => (a.headline || a.title).toUpperCase());
+            if (headlines.length > 0) {
+              setLiveHeadlines(headlines);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    loadBroadsheetNews();
+  }, []);
+
+  // Desk-filtered articles computed from liveArticles
+  const frontPageArticles = useMemo(
+    () => liveArticles.filter((a) => a.id !== liveLeadStory?.id),
+    [liveArticles, liveLeadStory]
+  );
+
+  const filterByDesk = (deskKeywords) => {
+    return liveArticles.filter((a) => {
+      const d = (a.desk || a.category || "").toUpperCase();
+      return deskKeywords.some((k) => d.includes(k));
+    });
+  };
+
+  const aiArticles = useMemo(
+    () => filterByDesk(["AI", "ARTIFICIAL"]),
+    [liveArticles]
+  );
+  const webArticles = useMemo(
+    () => filterByDesk(["WEB", "SYSTEM", "BROWSER"]),
+    [liveArticles]
+  );
+  const startupArticles = useMemo(
+    () => filterByDesk(["STARTUP", "CAPITAL", "VENTURE"]),
+    [liveArticles]
+  );
+  const designArticles = useMemo(
+    () => filterByDesk(["DESIGN", "TYPOGRAPH", "INTERFACE"]),
+    [liveArticles]
+  );
+  const securityArticles = useMemo(
+    () => filterByDesk(["SECUR", "CYBER", "VULNERABIL"]),
+    [liveArticles]
+  );
+  const gamingArticles = useMemo(
+    () => filterByDesk(["GAME", "GAMING", "SIMULATION"]),
+    [liveArticles]
+  );
+  const cultureArticles = useMemo(
+    () => filterByDesk(["CULTURE", "INTERNET", "ARTIFACT"]),
+    [liveArticles]
+  );
+  const businessArticles = useMemo(
+    () => filterByDesk(["BUSINESS", "MARKET", "FINANCE", "ECONOM"]),
+    [liveArticles]
+  );
+  const futureArticles = useMemo(
+    () => filterByDesk(["FUTURE", "QUANTUM", "SCIENCE"]),
+    [liveArticles]
+  );
 
   // Check saved authentication and clippings after client mount to prevent SSR hydration errors
   useEffect(() => {
@@ -57,7 +145,6 @@ export default function Home() {
           parsed.avatar = null;
           localStorage.setItem("times_user_session", JSON.stringify(parsed));
         }
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentUser(parsed);
       }
     } catch (e) {}
@@ -73,6 +160,45 @@ export default function Home() {
     setIsAuthLoaded(true);
   }, []);
 
+  // Live real-time notification monitor to dispatch toaster updates
+  useEffect(() => {
+    let isMounted = true;
+    const checkLiveNotifications = async () => {
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+        const res = await fetch("/api/notifications?unreadOnly=true&limit=3", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.success && Array.isArray(data.data) && data.data.length > 0) {
+            const latest = data.data[0];
+            const shownKey = `dt_shown_${latest._id || latest.id}`;
+            if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(shownKey)) {
+              sessionStorage.setItem(shownKey, "true");
+              toast?.notification?.(latest, (story) => {
+                handleOpenStory(story || {
+                  id: latest.articleId || latest.id,
+                  headline: latest.title,
+                  deck: latest.message,
+                  desk: latest.desk,
+                });
+              });
+            }
+          }
+        }
+      } catch (e) {}
+    };
+
+    const timer = setTimeout(checkLiveNotifications, 6000);
+    const interval = setInterval(checkLiveNotifications, 25000);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [toast]);
+
   const handleUserLogin = (user) => {
     const cleanUser = { ...user, avatar: null };
     setCurrentUser(cleanUser);
@@ -86,19 +212,58 @@ export default function Home() {
     setCurrentUser(null);
     try {
       localStorage.removeItem("times_user_session");
+      localStorage.removeItem("times_auth_token");
     } catch (e) {}
     setViewMode("dashboard");
   };
 
+  // Centralized Story Opener: Sets modal, tracks reading history (local & API), and shows toaster
+  const handleOpenStory = (story) => {
+    if (!story) return;
+    setSelectedArticle(story);
 
+    const storyId = story.id || story._id || story.slug;
 
+    // 1. Sync locally
+    try {
+      const current = JSON.parse(localStorage.getItem("times_reading_history") || "[]");
+      const updated = [
+        story,
+        ...current.filter((item) => (item?.id || item?._id || item?.slug) !== storyId),
+      ].slice(0, 30);
+      localStorage.setItem("times_reading_history", JSON.stringify(updated));
+    } catch (e) {}
+
+    // 2. Sync to Backend Reading History API
+    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    fetch("/api/users/history", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        articleId: storyId,
+        headline: story.headline || story.title,
+        deck: story.deck || story.description,
+        desk: story.desk,
+        author: story.author,
+        readTime: story.readTime,
+        image: story.image,
+        readPercentage: 100,
+        readDurationSeconds: 25,
+      }),
+    }).catch(() => {});
+
+    // 3. Toaster feedback
+    toast?.history?.(story);
+  };
 
   // Detect initial hash on mount and scroll to desk
   useEffect(() => {
     if (typeof window !== "undefined") {
       const hash = window.location.hash.replace("#", "");
       if (hash) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setViewMode("broadsheet");
         setTimeout(() => {
           if (window.__lenis) {
@@ -116,7 +281,6 @@ export default function Home() {
   // Update active desk based on scroll position
   useEffect(() => {
     const handleScroll = () => {
-      // If user reaches near bottom, activate the Future desk
       if (
         window.innerHeight + window.scrollY >=
         document.documentElement.scrollHeight - 180
@@ -157,8 +321,10 @@ export default function Home() {
   }, []);
 
   const saveClipping = (article) => {
+    let willBeSaved = false;
     setClippings((prev) => {
       const exists = prev.some((item) => item.id === article.id);
+      willBeSaved = !exists;
       let updated;
       if (exists) {
         updated = prev.filter((item) => item.id !== article.id);
@@ -170,6 +336,8 @@ export default function Home() {
       } catch (e) {}
       return updated;
     });
+
+    toast?.clipping?.(article, willBeSaved);
   };
 
   const removeClipping = (id) => {
@@ -208,22 +376,21 @@ export default function Home() {
     }
   };
 
-  const handlePrintBroadsheet = () => {
-    window.print();
-  };
-
   const handleAudioEdition = () => {
-    setSelectedArticle(leadStory);
+    handleOpenStory(liveLeadStory || leadStory);
   };
 
   const handleSelectStoryFromTicker = (headline) => {
-    const found = allArticles.find((a) =>
-      a.headline?.toLowerCase().includes(headline.toLowerCase().slice(0, 20))
+    const pool = [...liveArticles, ...allArticles];
+    const found = pool.find((a) =>
+      (a.headline || a.title || "")
+        ?.toLowerCase()
+        .includes(headline.toLowerCase().slice(0, 20))
     );
     if (found) {
-      setSelectedArticle(found);
+      handleOpenStory(found);
     } else {
-      setSelectedArticle(leadStory);
+      handleOpenStory(liveLeadStory || leadStory);
     }
   };
 
@@ -233,7 +400,7 @@ export default function Home() {
       ? "bg-[#EAE0CD] text-[#191612]"
       : paperTheme === "evening"
       ? "bg-[#171614] text-[#E0DACB]"
-      : "bg-[#F2EEE5] text-[#111111]";
+      : "bg-[#E8DFC8] text-[#201E19]";
 
   const scaleClass =
     typeScale === "broadsheet"
@@ -242,7 +409,7 @@ export default function Home() {
       ? "text-[14px]"
       : "text-[15px]";
 
-  const isAuthScreen = !currentUser && viewMode !== "broadsheet";
+  const isAuthScreen = isAuthLoaded && !currentUser && viewMode !== "broadsheet";
 
   return (
     <div
@@ -253,16 +420,25 @@ export default function Home() {
       {/* Subtle Editorial Cursor */}
       <EditorialCursor />
 
-      {!currentUser && viewMode !== "broadsheet" ? (
+      {!isAuthLoaded ? (
+        <div className="min-h-screen w-full bg-[#E8DFC8] text-[#201E19] flex items-center justify-center font-mono text-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#9F3028] animate-ping" />
+            <span>LOADING THE DIGITAL TIMES...</span>
+          </div>
+        </div>
+      ) : !currentUser && viewMode !== "broadsheet" ? (
         <EditorialAuthScreen
           onLogin={handleUserLogin}
           onBrowseGuest={() => setViewMode("broadsheet")}
+          leadStory={liveLeadStory}
+          articles={liveArticles}
         />
       ) : viewMode === "dashboard" ? (
         <YourTimesDashboard
           user={currentUser}
           onLogout={handleUserLogout}
-          onOpenArticle={(article) => setSelectedArticle(article)}
+          onOpenArticle={handleOpenStory}
           onSaveClipping={saveClipping}
           isSaved={isSaved}
           savedClippings={clippings}
@@ -303,7 +479,6 @@ export default function Home() {
               currentTheme={paperTheme}
               typeScale={typeScale}
               onCycleTypeScale={cycleTypeScale}
-              onPrintBroadsheet={handlePrintBroadsheet}
               onAudioEdition={handleAudioEdition}
             />
 
@@ -314,10 +489,16 @@ export default function Home() {
             />
 
             {/* Breaking News Press Teletype */}
-            <BreakingTicker onSelectStory={handleSelectStoryFromTicker} />
+            <BreakingTicker
+              onSelectStory={handleSelectStoryFromTicker}
+              headlines={liveHeadlines}
+            />
 
             {/* 1. Cinematic Hero Scene (0% to 100% Pinned Image & Split Headline Choreography) */}
-            <HeroScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <HeroScene
+              onOpenStory={handleOpenStory}
+              story={liveLeadStory}
+            />
 
             {/* Transition: Hero -> Front Page */}
             <SectionTransition
@@ -329,9 +510,11 @@ export default function Home() {
 
             {/* 2. Front Page Scene (Morphing 3-Column Broadsheet Grid) */}
             <FrontPageScene
-              onOpenStory={(story) => setSelectedArticle(story)}
+              onOpenStory={handleOpenStory}
               onSaveClipping={saveClipping}
               isSaved={isSaved}
+              lead={liveLeadStory}
+              articles={frontPageArticles}
             />
 
             {/* Transition: Front Page -> AI */}
@@ -343,7 +526,10 @@ export default function Home() {
             />
 
             {/* 3. The AI Desk Scene (Pinned Header, Benchmark Table, Pull Quote) */}
-            <AiScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <AiScene
+              onOpenStory={handleOpenStory}
+              articles={aiArticles}
+            />
 
             {/* Transition: AI -> Web */}
             <SectionTransition
@@ -354,7 +540,10 @@ export default function Home() {
             />
 
             {/* 4. The Web Desk Scene (Technical Broadsheet, RFC Code Etching Float, Telemetry) */}
-            <WebScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <WebScene
+              onOpenStory={handleOpenStory}
+              articles={webArticles}
+            />
 
             {/* Transition: Web -> Startups */}
             <SectionTransition
@@ -365,7 +554,10 @@ export default function Home() {
             />
 
             {/* 5. The Startup & Business Desk Scene ($140M Animated Counter, Ledger, ASCII Chart) */}
-            <StartupScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <StartupScene
+              onOpenStory={handleOpenStory}
+              articles={startupArticles}
+            />
 
             {/* Transition: Startups -> Design */}
             <SectionTransition
@@ -376,7 +568,10 @@ export default function Home() {
             />
 
             {/* 6. Editorial Design Desk Scene (Magazine Composition, Multi-Speed Collage Parallax) */}
-            <DesignScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <DesignScene
+              onOpenStory={handleOpenStory}
+              articles={designArticles}
+            />
 
             {/* Transition: Design -> Security */}
             <SectionTransition
@@ -387,7 +582,10 @@ export default function Home() {
             />
 
             {/* 7. Cybersecurity Desk Scene (Dark Newsprint, Slow Photo Parallax, Zero-Day Matrix) */}
-            <SecurityScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <SecurityScene
+              onOpenStory={handleOpenStory}
+              articles={securityArticles}
+            />
 
             {/* Transition: Security -> Gaming */}
             <SectionTransition
@@ -398,7 +596,10 @@ export default function Home() {
             />
 
             {/* 8. Gaming & Simulation Scene (Cinematic Crop Mask, 120 FPS Telemetry, Critic Score) */}
-            <GamingScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <GamingScene
+              onOpenStory={handleOpenStory}
+              articles={gamingArticles}
+            />
 
             {/* Transition: Gaming -> Culture */}
             <SectionTransition
@@ -409,7 +610,10 @@ export default function Home() {
             />
 
             {/* 9. Culture, Classifieds & Cryptic Crossword Scene */}
-            <CultureScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <CultureScene
+              onOpenStory={handleOpenStory}
+              articles={cultureArticles}
+            />
 
             {/* Transition: Culture -> Business */}
             <SectionTransition
@@ -420,7 +624,10 @@ export default function Home() {
             />
 
             {/* 10. Business & Markets Scene (Commodity Standards, Reserve Indicators) */}
-            <BusinessScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <BusinessScene
+              onOpenStory={handleOpenStory}
+              articles={businessArticles}
+            />
 
             {/* Transition: Business -> Future */}
             <SectionTransition
@@ -431,7 +638,10 @@ export default function Home() {
             />
 
             {/* 11. Deep Future Scene (Pinned Expanding Quantum Lab Photo & Horizon Milestones) */}
-            <FutureScene onOpenStory={(story) => setSelectedArticle(story)} />
+            <FutureScene
+              onOpenStory={handleOpenStory}
+              articles={futureArticles}
+            />
 
             {/* Grand Broadsheet Imprint & Footer */}
             <NewspaperFooter onSelectDesk={scrollToDesk} />
@@ -443,7 +653,7 @@ export default function Home() {
                   setViewMode("dashboard");
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="bg-[#111111]/95 text-[#F2EEE5] hover:bg-[#2A2A2A] text-[10.5px] sm:text-xs font-serif font-bold px-3 py-1.5 sm:px-4 sm:py-2.5 rounded-full shadow-2xl border border-[#F2EEE5]/30 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+                className="bg-[#201E19]/95 text-[#E8DFC8] hover:bg-[#2A2A2A] text-[10.5px] sm:text-xs font-serif font-bold px-3 py-1.5 sm:px-4 sm:py-2.5 rounded-full shadow-2xl border border-[#E8DFC8]/30 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
                 title="Return to Your Times Dashboard"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -468,7 +678,7 @@ export default function Home() {
         isOpen={isClippingsOpen}
         onClose={() => setIsClippingsOpen(false)}
         clippings={clippings}
-        onOpenStory={(story) => setSelectedArticle(story)}
+        onOpenStory={handleOpenStory}
         onRemoveClipping={removeClipping}
       />
 
@@ -476,17 +686,20 @@ export default function Home() {
       <SearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onOpenStory={(story) => setSelectedArticle(story)}
+        onOpenStory={handleOpenStory}
       />
 
       {/* Authentic Dynamic Newsroom Update Toast (Connected to /api/newsroom) */}
       <NewsroomUpdateToast
         enabled={!isAuthScreen}
-        onOpenArticle={(story) => setSelectedArticle(story)}
+        onOpenArticle={handleOpenStory}
         onRefreshEdition={() => {
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}
       />
+
+      {/* Editorial Broadsheet Action Toaster */}
+      <EditorialToaster onOpenStory={handleOpenStory} />
     </div>
   );
 }

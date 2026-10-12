@@ -51,7 +51,7 @@ export default function EditorialPin({
           <div
             ref={pinnedRef}
             className={`lg:col-span-5 will-change-transform ${
-              reverse ? "lg:order-2 lg:border-l lg:border-[#1A1A1A]/30 lg:pl-6" : "lg:order-1 lg:border-r lg:border-[#1A1A1A]/30 lg:pr-6"
+              reverse ? "lg:order-2 lg:border-l lg:border-[#766E5F]/30 lg:pl-6" : "lg:order-1 lg:border-r lg:border-[#766E5F]/30 lg:pr-6"
             }`}
           >
             {pinnedContent}
@@ -64,7 +64,7 @@ export default function EditorialPin({
             }`}
           >
             {scrollingItems.map((item, idx) => (
-              <div key={idx} className="pb-6 border-b border-[#1A1A1A]/20 last:border-b-0">
+              <div key={idx} className="pb-6 border-b border-[#766E5F]/20 last:border-b-0">
                 {item}
               </div>
             ))}

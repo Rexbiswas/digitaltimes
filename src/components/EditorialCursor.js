@@ -56,13 +56,13 @@ export default function EditorialCursor() {
       }}
     >
       {cursorText ? (
-        <div className="bg-[#111111] text-[#F2EEE5] text-[10px] tracking-widest uppercase font-mono px-2 py-1 border border-[#F2EEE5] shadow-md transform -translate-x-1/2 -translate-y-10 whitespace-nowrap animate-in fade-in zoom-in-95 duration-150">
+        <div className="bg-[#201E19] text-[#E8DFC8] text-[10px] tracking-widest uppercase font-mono px-2 py-1 border border-[#E8DFC8] shadow-md transform -translate-x-1/2 -translate-y-10 whitespace-nowrap animate-in fade-in zoom-in-95 duration-150">
           {cursorText}
         </div>
       ) : (
         <div
-          className={`w-4 h-4 rounded-full border border-[#111111]/70 transition-all duration-150 ${
-            isPointer ? "scale-150 bg-[#111111]/15" : "scale-75 bg-[#111111]/30"
+          className={`w-4 h-4 rounded-full border border-[#766E5F]/70 transition-all duration-150 ${
+            isPointer ? "scale-150 bg-[#201E19]/15" : "scale-75 bg-[#201E19]/30"
           }`}
         />
       )}

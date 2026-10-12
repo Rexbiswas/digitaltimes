@@ -56,11 +56,11 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
 
   return (
     <div 
-      className="fixed inset-0 z-50 bg-[#111111]/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-[#201E19]/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl max-h-[90vh] bg-[#F7F4EE] text-[#111111] border-2 border-[#1A1A1A] shadow-2xl flex flex-col rounded-xl overflow-hidden"
+        className="w-full max-w-3xl max-h-[90vh] bg-[#F7F4EE] text-[#201E19] border-2 border-[#766E5F] shadow-2xl flex flex-col rounded-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Bar */}
@@ -69,7 +69,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
             <div className="text-[10px] font-mono tracking-widest text-[#777777] uppercase font-bold">
               THE DIGITAL TIMES ARCHIVES
             </div>
-            <h2 className="font-serif font-black text-2xl sm:text-3xl tracking-tight text-[#111111] uppercase leading-tight">
+            <h2 className="font-serif font-black text-2xl sm:text-3xl tracking-tight text-[#201E19] uppercase leading-tight">
               SEARCH
             </h2>
           </div>
@@ -77,7 +77,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
           <div className="flex items-center gap-2">
             <button
               onClick={handleOpenFullPage}
-              className="p-2 text-[#555555] hover:text-[#111111] hover:bg-[#ECE6D8] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-mono font-bold"
+              className="p-2 text-[#39352D] hover:text-[#201E19] hover:bg-[#DFD5BC] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-mono font-bold"
               title="Open full search page"
             >
               <Maximize2 className="w-4 h-4" />
@@ -85,7 +85,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-[#555555] hover:text-[#111111] hover:bg-[#ECE6D8] rounded-lg transition-colors cursor-pointer"
+              className="p-2 text-[#39352D] hover:text-[#201E19] hover:bg-[#DFD5BC] rounded-lg transition-colors cursor-pointer"
               title="Close modal"
             >
               <X className="w-5 h-5" />
@@ -95,7 +95,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
 
         {/* Search Bar Container */}
         <div className="px-5 sm:px-6 pt-4 pb-2">
-          <div className="flex items-center bg-[#FDFBF7] border-2 border-[#1A1A1A]/20 focus-within:border-[#111111] rounded-2xl shadow-xs p-1.5 sm:p-2 transition-all">
+          <div className="flex items-center bg-[#FDFBF7] border-2 border-[#766E5F]/20 focus-within:border-[#766E5F] rounded-2xl shadow-xs p-1.5 sm:p-2 transition-all">
             <div className="pl-2 sm:pl-3 pr-2 text-[#777777]">
               <Search className="w-5 h-5 text-[#666666]" />
             </div>
@@ -105,7 +105,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
               placeholder="Search articles, headlines, topics, dispatches..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-transparent font-serif text-sm sm:text-base md:text-lg text-[#111111] placeholder:text-[#999999] outline-none py-1"
+              className="w-full bg-transparent font-serif text-sm sm:text-base md:text-lg text-[#201E19] placeholder:text-[#999999] outline-none py-1"
               autoFocus
             />
 
@@ -113,7 +113,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="p-1 text-[#888888] hover:text-[#111111] hover:bg-[#ECE6D8] rounded-full transition-colors mr-1 cursor-pointer"
+                className="p-1 text-[#888888] hover:text-[#201E19] hover:bg-[#DFD5BC] rounded-full transition-colors mr-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -122,7 +122,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
             <button
               type="button"
               onClick={handleOpenFullPage}
-              className="bg-[#111111] hover:bg-[#252525] text-white p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-sm"
+              className="bg-[#201E19] hover:bg-[#252525] text-white p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-sm"
               aria-label="Execute search"
             >
               <Search className="w-4 h-4 text-white" />
@@ -139,13 +139,13 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
                   onClick={() => setActiveTab(tab)}
                   className={`pb-2 text-xs font-bold tracking-wider uppercase transition-all relative cursor-pointer ${
                     isActive
-                      ? "text-[#111111] font-black"
-                      : "text-[#777777] hover:text-[#111111]"
+                      ? "text-[#201E19] font-black"
+                      : "text-[#777777] hover:text-[#201E19]"
                   }`}
                 >
                   {tab}
                   {isActive && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#111111]" />
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#201E19]" />
                   )}
                 </button>
               );
@@ -153,7 +153,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
           </div>
 
           {/* Stories Count */}
-          <div className="flex items-center justify-between text-[11px] font-serif font-bold text-[#444444] tracking-wider uppercase pt-3 pb-1">
+          <div className="flex items-center justify-between text-[11px] font-serif font-bold text-[#39352D] tracking-wider uppercase pt-3 pb-1">
             <span>{filtered.length} {filtered.length === 1 ? "STORY" : "STORIES"} FOUND</span>
             {query && <span className="font-mono text-[#777777]">QUERY: &ldquo;{query}&rdquo;</span>}
           </div>
@@ -173,19 +173,23 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
                   onOpenStory(item);
                   onClose();
                 }}
-                className="flex items-start gap-3 p-2.5 rounded-lg border border-[#1A1A1A]/10 bg-[#FAF8F3] hover:bg-[#EFEAE0] cursor-pointer transition-colors group"
+                className="flex items-start gap-3 p-2.5 rounded-lg border border-[#766E5F]/10 bg-[#FAF8F3] hover:bg-[#EFEAE0] cursor-pointer transition-colors group"
                 data-cursor="READ"
               >
                 {/* Thumbnail Image on Left */}
-                <div className="w-20 sm:w-28 h-16 sm:h-20 rounded-md overflow-hidden flex-shrink-0 bg-[#E0D9CB] border border-[#1A1A1A]/10">
-                  {item.image ? (
+                <div className="w-20 sm:w-28 h-16 sm:h-20 rounded-md overflow-hidden flex-shrink-0 bg-[#E0D9CB] border border-[#766E5F]/10">
+                  {item.urlToImage || item.image ? (
                     <img
-                      src={item.image}
+                      src={item.urlToImage || item.image}
                       alt={item.headline}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "/window.svg";
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-[#111111] text-[#F7F4EE] font-masthead text-xs">
+                    <div className="w-full h-full flex items-center justify-center bg-[#201E19] text-[#F7F4EE] font-masthead text-xs">
                       DT
                     </div>
                   )}
@@ -193,11 +197,11 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
 
                 {/* Right Text */}
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-serif font-bold text-sm sm:text-base text-[#111111] group-hover:text-[#A71919] leading-snug line-clamp-2">
+                  <h4 className="font-serif font-bold text-sm sm:text-base text-[#201E19] group-hover:text-[#9F3028] leading-snug line-clamp-2">
                     {item.headline}
                   </h4>
                   <div className="text-[10px] font-mono text-[#777777] uppercase font-semibold my-1 flex items-center gap-1.5">
-                    <span className="text-[#A71919] font-bold">{item.desk || "DISPATCH"}</span>
+                    <span className="text-[#9F3028] font-bold">{item.desk || "DISPATCH"}</span>
                     <span>•</span>
                     <span>
                       {item.timeAgo ||
@@ -206,7 +210,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
                           : "TODAY")}
                     </span>
                   </div>
-                  <p className="font-serif italic text-xs text-[#555555] line-clamp-2 leading-relaxed">
+                  <p className="font-serif italic text-xs text-[#39352D] line-clamp-2 leading-relaxed">
                     {item.deck || item.leadParagraph}
                   </p>
                 </div>
@@ -219,7 +223,7 @@ export default function SearchModal({ isOpen, onClose, onOpenStory }) {
         <div className="px-5 sm:px-6 py-2.5 border-t border-[#D5CFC2] bg-[#EFEAE0]/60 flex items-center justify-between text-[11px] font-mono text-[#666666]">
           <button
             onClick={handleOpenFullPage}
-            className="hover:text-[#111111] flex items-center gap-1 font-bold cursor-pointer"
+            className="hover:text-[#201E19] flex items-center gap-1 font-bold cursor-pointer"
           >
             <span>VIEW AS FULL BROADCAST SEARCH PAGE</span>
             <ExternalLink className="w-3.5 h-3.5" />

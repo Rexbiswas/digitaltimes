@@ -25,7 +25,7 @@
   <!-- Editorial Monogram Group -->
   <g filter="url(#inkGlow)">
     <!-- Classic Broadsheet Serif "D" (The Digital Times) -->
-    <path d="M 124 120 L 254 120 C 344 120 404 175 404 256 C 404 337 344 392 254 392 L 124 392 L 124 354 L 164 354 L 164 158 L 124 158 Z" fill="#F2EEE5"/>
+    <path d="M 124 120 L 254 120 C 344 120 404 175 404 256 C 404 337 344 392 254 392 L 124 392 L 124 354 L 164 354 L 164 158 L 124 158 Z" fill="#E8DFC8"/>
     <!-- Inner Counter -->
     <path d="M 230 178 L 230 334 L 256 334 C 314 334 350 298 350 256 C 350 214 314 178 256 178 Z" fill="#131210"/>
     
@@ -34,8 +34,8 @@
   </g>
 
   <!-- Telegraph Wire Crimson Live Rosette -->
-  <circle cx="396" cy="120" r="34" fill="#A71919"/>
+  <circle cx="396" cy="120" r="34" fill="#9F3028"/>
   <circle cx="396" cy="120" r="26" fill="#C92A2A"/>
-  <circle cx="396" cy="120" r="14" fill="#FAF7F0"/>
-  <circle cx="396" cy="120" r="6" fill="#A71919"/>
+  <circle cx="396" cy="120" r="14" fill="#EFE8D5"/>
+  <circle cx="396" cy="120" r="6" fill="#9F3028"/>
 </svg>

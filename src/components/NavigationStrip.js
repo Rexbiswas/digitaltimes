@@ -29,9 +29,9 @@ export default function NavigationStrip({ activeDesk, onSelectDesk }) {
   };
 
   return (
-    <nav className="w-full bg-[#F2EEE5]/98 backdrop-blur-md sticky top-[33px] sm:top-[37px] z-30 border-b-2 border-[#1A1A1A] select-none shadow-xs transition-colors">
+    <nav className="w-full bg-[#E8DFC8]/98 backdrop-blur-md sticky top-[33px] sm:top-[37px] z-30 border-b-2 border-[#766E5F] select-none shadow-xs transition-colors">
       <div className="max-w-[1440px] mx-auto px-1 sm:px-3 lg:px-6">
-        <div className="w-full flex items-center overflow-x-auto no-scrollbar scrollbar-none py-1 sm:py-1.5 md:py-2 text-[10.5px] sm:text-[11px] md:text-[12px] font-mono tracking-wider text-[#111111] gap-1 sm:gap-1.5 md:justify-between">
+        <div className="w-full flex items-center overflow-x-auto no-scrollbar scrollbar-none py-1 sm:py-1.5 md:py-2 text-[10.5px] sm:text-[11px] md:text-[12px] font-mono tracking-wider text-[#201E19] gap-1 sm:gap-1.5 md:justify-between">
           {navigationDesks.map((desk, idx) => {
             const isActive = activeDesk === desk.id;
             const targetHref = isHomePage ? `/#${desk.id}` : `/desk/${desk.id}`;
@@ -43,8 +43,8 @@ export default function NavigationStrip({ activeDesk, onSelectDesk }) {
                   onClick={(e) => handleDeskClick(e, desk.id)}
                   className={`whitespace-nowrap px-2.5 sm:px-2 py-1 transition-all cursor-pointer font-bold relative flex items-center justify-center gap-1 rounded-sm ${
                     isActive
-                      ? "bg-[#111111] text-[#F2EEE5] shadow-xs"
-                      : "hover:bg-[#111111]/10 text-[#222222]"
+                      ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                      : "hover:bg-[#201E19]/10 text-[#222222]"
                   }`}
                   title={`Turn to ${desk.label} (Page ${desk.page})`}
                   data-cursor="DESK"
@@ -56,7 +56,7 @@ export default function NavigationStrip({ activeDesk, onSelectDesk }) {
                 </Link>
 
                 {idx < navigationDesks.length - 1 && (
-                  <span className="text-[#1A1A1A]/25 select-none hidden md:inline px-1">
+                  <span className="text-[#766E5F]/25 select-none hidden md:inline px-1">
                     |
                   </span>
                 )}

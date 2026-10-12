@@ -41,7 +41,7 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${playfair.variable} ${newsreader.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#F2EEE5] text-[#111111] selection:bg-[#111111] selection:text-[#F2EEE5]">
+      <body className="min-h-full flex flex-col bg-[#E8DFC8] text-[#201E19] selection:bg-[#201E19] selection:text-[#E8DFC8]">
         {children}
       </body>
     </html>

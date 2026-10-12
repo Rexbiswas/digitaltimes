@@ -4,10 +4,16 @@ import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { startupDeskData } from "@/data/newspaperData";
+import { Play, ArrowRight } from "lucide-react";
 import SplitHeadline from "@/components/motion/SplitHeadline";
 
-export default function StartupScene({ onOpenStory }) {
-  const { lead, dealFlow, chartData } = startupDeskData;
+export default function StartupScene({ onOpenStory, articles }) {
+  const currentLead =
+    articles && articles[0] ? { ...startupDeskData.lead, ...articles[0] } : startupDeskData.lead;
+  const lead = currentLead;
+  const dealFlow = startupDeskData.dealFlow;
+  const chartData = startupDeskData.chartData;
+
   const containerRef = useRef(null);
   const statBoxRef = useRef(null);
   const numberRef = useRef(null);
@@ -93,20 +99,20 @@ export default function StartupScene({ onOpenStory }) {
     <section
       id="startups"
       ref={containerRef}
-      className="w-full bg-[#F2EEE5] py-12 border-b border-[#1A1A1A] select-none scroll-mt-14 sm:scroll-mt-16"
+      className="w-full bg-[#E8DFC8] py-12 border-b border-[#766E5F] select-none scroll-mt-14 sm:scroll-mt-16"
     >
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
         {/* Department Header */}
-        <div className="border-t-4 border-b-2 border-[#1A1A1A] py-2 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+        <div className="border-t-4 border-b-2 border-[#766E5F] py-2 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
           <div>
-            <span className="font-mono text-xs tracking-widest text-[#A71919] uppercase font-bold">
+            <span className="font-mono text-xs tracking-widest text-[#9F3028] uppercase font-bold">
               CAPITAL MARKETS, VENTURE DEALS & EQUITIES
             </span>
-            <h3 className="font-serif font-black text-2xl sm:text-4xl text-[#111111] uppercase tracking-tight">
+            <h3 className="font-serif font-black text-2xl sm:text-4xl text-[#201E19] uppercase tracking-tight">
               STARTUPS & CAPITAL
             </h3>
           </div>
-          <div className="text-xs font-mono text-[#555555] flex flex-wrap items-center gap-2 sm:gap-4 uppercase font-bold">
+          <div className="text-xs font-mono text-[#39352D] flex flex-wrap items-center gap-2 sm:gap-4 uppercase font-bold">
             <span>FUNDING</span>
             <span>•</span>
             <span>FOUNDERS</span>
@@ -122,59 +128,82 @@ export default function StartupScene({ onOpenStory }) {
         {/* Large Financial Typography & Deal Flow Broadsheet */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Main Financial Lead (6 columns) */}
-          <div className="lg:col-span-6 lg:pr-6 lg:border-r border-[#1A1A1A]/30">
-            <div className="text-[11px] font-mono text-[#A71919] uppercase font-bold mb-1">
+          <div className="lg:col-span-6 lg:pr-6 lg:border-r border-[#766E5F]/30">
+            <div className="text-[11px] font-mono text-[#9F3028] uppercase font-bold mb-1">
               VENTURE DISPATCH • {lead.page}
             </div>
 
             <SplitHeadline
               text={lead.headline}
               as="h4"
-              className="text-3xl sm:text-4xl md:text-5xl leading-[1.0] mb-3 hover:text-[#A71919] transition-colors cursor-pointer"
+              className="text-3xl sm:text-4xl md:text-5xl leading-[1.0] mb-3 hover:text-[#9F3028] transition-colors cursor-pointer"
               onClick={() => onOpenStory(lead)}
             />
 
             {/* Giant Financial Stat Callout with Animated Counter */}
             <div
               ref={statBoxRef}
-              className="my-6 border-y-4 border-[#1A1A1A] py-5 bg-[#ECE6D8] text-center"
+              className="my-6 border-y-4 border-[#766E5F] py-5 bg-[#DFD5BC] text-center"
             >
               <div
                 ref={numberRef}
-                className="font-mono text-5xl sm:text-6xl md:text-7xl font-black text-[#111111] tracking-tight"
+                className="font-mono text-5xl sm:text-6xl md:text-7xl font-black text-[#201E19] tracking-tight"
               >
                 $0M
               </div>
-              <div className="font-mono text-xs sm:text-sm tracking-[0.25em] uppercase text-[#A71919] font-bold mt-1">
+              <div className="font-mono text-xs sm:text-sm tracking-[0.25em] uppercase text-[#9F3028] font-bold mt-1">
                 {lead.highlightLabel}
               </div>
-              <div className="text-[11px] font-serif italic text-[#555555] mt-1">
+              <div className="text-[11px] font-serif italic text-[#39352D] mt-1">
                 Autonomous studios with zero human payroll achieve $1B+ market caps in record time
               </div>
             </div>
 
-            <p className="font-serif text-base sm:text-lg text-[#333333] leading-relaxed mb-4">
+            <p className="font-serif text-base sm:text-lg text-[#39352D] leading-relaxed mb-4">
               {lead.deck}
             </p>
 
-            <div className="text-xs font-mono text-[#666666] mb-4 pb-2 border-b border-[#1A1A1A]/30">
+            <div className="text-xs font-mono text-[#666666] mb-4 pb-2 border-b border-[#766E5F]/30">
               {lead.author} • {lead.readTime} • SILICON VALLEY BUREAU
             </div>
 
             <p className="font-serif text-[15px] leading-[1.65] text-[#222222] mb-4 text-justify">
-              In Sand Hill Road boardrooms, the traditional metrics of head-count expansion and organizational hierarchy have been discarded. Investment memorandums now focus almost exclusively on autonomous reasoning efficiency, token velocity, and energy contracts negotiated directly with hydro-electric utilities.
+              {lead.body || lead.leadParagraph || "In Sand Hill Road boardrooms, the traditional metrics of head-count expansion and organizational hierarchy have been discarded. Investment memorandums now focus almost exclusively on autonomous reasoning efficiency, token velocity, and energy contracts negotiated directly with hydro-electric utilities."}
             </p>
+
+            {(lead.urlToImage || lead.image) && (
+              <div
+                onClick={() => onOpenStory(lead)}
+                className="relative w-full h-52 sm:h-64 my-4 border border-[#766E5F] overflow-hidden bg-[#201E19] group cursor-pointer"
+              >
+                <img
+                  src={lead.urlToImage || lead.image || "/window.svg"}
+                  alt={lead.headline}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = "/window.svg";
+                  }}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 filter contrast-[1.08]"
+                />
+                {lead.video && (
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-xs bg-[#201E19]/90 text-[#E8DFC8] text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 border border-white/20">
+                    <Play className="w-2.5 h-2.5 fill-[#9F3028] text-[#9F3028]" />
+                    <span>VIDEO DISPATCH</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Deal Ledger & Adoption Chart (6 columns) */}
           <div className="lg:col-span-6 min-w-0 space-y-6">
             {/* The Financial Deal Table */}
-            <div className="border-2 border-[#1A1A1A] p-4 bg-[#ECE6D8]">
-              <div className="flex items-center justify-between border-b border-[#1A1A1A] pb-2 mb-3">
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#111111]">
+            <div className="border-2 border-[#766E5F] p-4 bg-[#DFD5BC]">
+              <div className="flex items-center justify-between border-b border-[#766E5F] pb-2 mb-3">
+                <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#201E19]">
                   THE WEEK IN VENTURE ROUNDS
                 </span>
-                <span className="font-mono text-[9px] bg-[#111111] text-[#F2EEE5] px-1 font-bold">
+                <span className="font-mono text-[9px] bg-[#201E19] text-[#E8DFC8] px-1 font-bold">
                   Q3 2026 LEDGER
                 </span>
               </div>
@@ -182,7 +211,7 @@ export default function StartupScene({ onOpenStory }) {
               <div className="overflow-x-auto no-scrollbar scrollbar-none">
                 <table className="w-full text-left font-mono text-[11px] text-[#222222]">
                   <thead>
-                    <tr className="border-b border-[#1A1A1A]/40 text-[#555555]">
+                    <tr className="border-b border-[#766E5F]/40 text-[#39352D]">
                       <th className="py-1">SYNDICATE</th>
                       <th className="py-1">STAGE</th>
                       <th className="py-1">AMOUNT</th>
@@ -190,18 +219,18 @@ export default function StartupScene({ onOpenStory }) {
                       <th className="py-1 text-right">FOCUS</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#1A1A1A]/20">
+                  <tbody className="divide-y divide-[#766E5F]/20">
                     {dealFlow.map((deal, idx) => (
                       <tr
-                        key={deal.company}
+                        key={deal.company || `deal-${idx}`}
                         ref={(node) => (dealsRef.current[idx] = node)}
-                        className="hover:bg-[#111111]/5 will-change-transform"
+                        className="hover:bg-[#201E19]/5 will-change-transform"
                       >
-                        <td className="py-2 font-bold text-[#111111]">{deal.company}</td>
-                        <td className="py-2 text-[#555555]">{deal.round}</td>
-                        <td className="py-2 font-black text-[#A71919]">{deal.amount}</td>
-                        <td className="py-2 font-semibold text-[#111111]">{deal.valuation}</td>
-                        <td className="py-2 text-right text-[10px] text-[#444444]">{deal.focus}</td>
+                        <td className="py-2 font-bold text-[#201E19]">{deal.company}</td>
+                        <td className="py-2 text-[#39352D]">{deal.round}</td>
+                        <td className="py-2 font-black text-[#9F3028]">{deal.amount}</td>
+                        <td className="py-2 font-semibold text-[#201E19]">{deal.valuation}</td>
+                        <td className="py-2 text-right text-[10px] text-[#39352D]">{deal.focus}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -212,26 +241,26 @@ export default function StartupScene({ onOpenStory }) {
             {/* Editorial ASCII Data Chart */}
             <div
               ref={chartRef}
-              className="border border-[#1A1A1A] p-4 bg-[#F2EEE5]"
+              className="border border-[#766E5F] p-4 bg-[#E8DFC8]"
             >
-              <div className="text-[10px] font-mono text-[#A71919] font-bold uppercase tracking-widest mb-1">
+              <div className="text-[10px] font-mono text-[#9F3028] font-bold uppercase tracking-widest mb-1">
                 COMPUTE PRICING EVOLUTION (2022–2026)
               </div>
-              <h5 className="font-serif font-bold text-base text-[#111111] uppercase mb-3">
+              <h5 className="font-serif font-bold text-base text-[#201E19] uppercase mb-3">
                 Shift from Per-Seat SaaS to Outcome-Based Autonomous Escrow
               </h5>
 
               <div className="space-y-2 font-mono text-xs">
-                {chartData.map((row) => (
+                {chartData.map((row, idx) => (
                   <div
-                    key={row.year}
-                    className="chart-row flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-[#1A1A1A]/10 will-change-transform"
+                    key={row.year || `chart-${idx}`}
+                    className="chart-row flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-[#766E5F]/10 will-change-transform"
                   >
-                    <span className="font-bold text-[#111111] w-12">{row.year}</span>
-                    <span className="text-[#A71919] font-mono font-bold tracking-tighter">
+                    <span className="font-bold text-[#201E19] w-12">{row.year}</span>
+                    <span className="text-[#9F3028] font-mono font-bold tracking-tighter">
                       {row.value}
                     </span>
-                    <span className="text-[10px] text-[#555555] italic sm:text-right">
+                    <span className="text-[10px] text-[#39352D] italic sm:text-right">
                       {row.label}
                     </span>
                   </div>

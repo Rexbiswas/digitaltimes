@@ -7,8 +7,10 @@ import { designDeskData } from "@/data/newspaperData";
 import { Palette, Layers, Sparkles, ArrowRight } from "lucide-react";
 import SplitHeadline from "@/components/motion/SplitHeadline";
 
-export default function DesignScene({ onOpenStory }) {
-  const { lead } = designDeskData;
+export default function DesignScene({ onOpenStory, articles }) {
+  const currentLead =
+    articles && articles[0] ? { ...designDeskData.lead, ...articles[0] } : designDeskData.lead;
+  const lead = currentLead;
   const containerRef = useRef(null);
   const card1Ref = useRef(null);
   const card2Ref = useRef(null);
@@ -68,20 +70,20 @@ export default function DesignScene({ onOpenStory }) {
     <section
       id="design"
       ref={containerRef}
-      className="w-full bg-[#EAE3D2] py-12 border-b border-[#1A1A1A] select-none scroll-mt-14 sm:scroll-mt-16"
+      className="w-full bg-[#EAE3D2] py-12 border-b border-[#766E5F] select-none scroll-mt-14 sm:scroll-mt-16"
     >
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
         {/* Department Header */}
-        <div className="border-t-4 border-b-2 border-[#1A1A1A] py-2 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+        <div className="border-t-4 border-b-2 border-[#766E5F] py-2 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
           <div>
-            <span className="font-mono text-xs tracking-widest text-[#A71919] uppercase font-bold">
+            <span className="font-mono text-xs tracking-widest text-[#9F3028] uppercase font-bold">
               GRAPHIC ARTS, TYPOGRAPHY & MATERIAL INTERFACES
             </span>
-            <h3 className="font-serif font-black text-2xl sm:text-4xl text-[#111111] uppercase tracking-tight">
+            <h3 className="font-serif font-black text-2xl sm:text-4xl text-[#201E19] uppercase tracking-tight">
               EDITORIAL DESIGN DESK
             </h3>
           </div>
-          <div className="text-xs font-mono text-[#555555] flex flex-wrap items-center gap-2 sm:gap-4 uppercase font-bold">
+          <div className="text-xs font-mono text-[#39352D] flex flex-wrap items-center gap-2 sm:gap-4 uppercase font-bold">
             <span>TYPOGRAPHY</span>
             <span>•</span>
             <span>GRIDS</span>
@@ -97,23 +99,23 @@ export default function DesignScene({ onOpenStory }) {
         {/* Magazine Editorial Composition */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Main Story & Principles (7 columns) */}
-          <div className="lg:col-span-7 lg:pr-6 lg:border-r border-[#1A1A1A]/30">
-            <div className="text-[11px] font-mono text-[#A71919] uppercase font-bold mb-1">
+          <div className="lg:col-span-7 lg:pr-6 lg:border-r border-[#766E5F]/30">
+            <div className="text-[11px] font-mono text-[#9F3028] uppercase font-bold mb-1">
               MAGAZINE CRITIQUE • {lead.page}
             </div>
 
             <SplitHeadline
               text={lead.headline}
               as="h4"
-              className="text-3xl sm:text-4xl md:text-5xl leading-[1.0] mb-3 hover:text-[#A71919] transition-colors cursor-pointer"
+              className="text-3xl sm:text-4xl md:text-5xl leading-[1.0] mb-3 hover:text-[#9F3028] transition-colors cursor-pointer"
               onClick={() => onOpenStory(lead)}
             />
 
-            <p className="font-serif text-base sm:text-lg text-[#333333] leading-relaxed mb-4">
+            <p className="font-serif text-base sm:text-lg text-[#39352D] leading-relaxed mb-4">
               {lead.deck}
             </p>
 
-            <div className="text-xs font-mono text-[#666666] mb-4 pb-2 border-b border-[#1A1A1A]/30">
+            <div className="text-xs font-mono text-[#666666] mb-4 pb-2 border-b border-[#766E5F]/30">
               {lead.author} • {lead.readTime} • BASEL EDITORIAL SALON
             </div>
 
@@ -122,29 +124,29 @@ export default function DesignScene({ onOpenStory }) {
             </p>
 
             {/* Design Principles Grid */}
-            <div className="my-6 border-y-2 border-[#1A1A1A] py-4 bg-[#F2EEE5] grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="my-6 border-y-2 border-[#766E5F] py-4 bg-[#E8DFC8] grid grid-cols-1 md:grid-cols-3 gap-4">
               {lead.designPrinciples.map((p) => (
-                <div key={p.num} className="border-r border-[#1A1A1A]/20 pr-2 last:border-r-0">
-                  <span className="font-mono text-xs font-black text-[#A71919] block mb-1">
+                <div key={p.num} className="border-r border-[#766E5F]/20 pr-2 last:border-r-0">
+                  <span className="font-mono text-xs font-black text-[#9F3028] block mb-1">
                     CANON {p.num}
                   </span>
-                  <div className="font-serif font-bold text-sm text-[#111111] mb-1">
+                  <div className="font-serif font-bold text-sm text-[#201E19] mb-1">
                     {p.title}
                   </div>
-                  <div className="font-serif text-xs text-[#555555] leading-snug">
+                  <div className="font-serif text-xs text-[#39352D] leading-snug">
                     {p.desc}
                   </div>
                 </div>
               ))}
             </div>
 
-            <blockquote className="my-4 p-4 border-l-4 border-[#1A1A1A] bg-[#ECE6D8] font-serif italic text-base text-[#111111]">
+            <blockquote className="my-4 p-4 border-l-4 border-[#766E5F] bg-[#DFD5BC] font-serif italic text-base text-[#201E19]">
               {lead.pullQuote}
             </blockquote>
 
             <button
               onClick={() => onOpenStory(lead)}
-              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#111111] hover:text-[#A71919] border border-[#111111] px-3.5 py-1.5 hover:bg-[#111111] hover:text-[#F2EEE5] transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#201E19] hover:text-[#9F3028] border border-[#766E5F] px-3.5 py-1.5 hover:bg-[#201E19] hover:text-[#E8DFC8] transition-all cursor-pointer"
               data-cursor="READ"
             >
               <span>Read Full Design Manifesto</span>
@@ -154,7 +156,7 @@ export default function DesignScene({ onOpenStory }) {
 
           {/* Multi-speed Image Collage (5 columns) */}
           <div className="lg:col-span-5 space-y-6 pt-2">
-            <div className="border border-[#1A1A1A] pb-1 font-mono text-xs font-bold uppercase text-[#555555]">
+            <div className="border border-[#766E5F] pb-1 font-mono text-xs font-bold uppercase text-[#39352D]">
               MATERIAL PRINT COLLAGE // THREE ETCHINGS
             </div>
 
@@ -162,16 +164,16 @@ export default function DesignScene({ onOpenStory }) {
               {/* Collage Item 1 */}
               <div
                 ref={card1Ref}
-                className="p-4 border-2 border-[#1A1A1A] bg-[#F2EEE5] shadow-xs will-change-transform transform-gpu"
+                className="p-4 border-2 border-[#766E5F] bg-[#E8DFC8] shadow-xs will-change-transform transform-gpu"
               >
-                <div className="flex items-center justify-between text-[10px] font-mono text-[#A71919] font-bold mb-1">
+                <div className="flex items-center justify-between text-[10px] font-mono text-[#9F3028] font-bold mb-1">
                   <span>EXHIBIT 01</span>
                   <span>{lead.collageImages[0]?.meta}</span>
                 </div>
-                <div className="font-serif font-bold text-lg text-[#111111] uppercase">
+                <div className="font-serif font-bold text-lg text-[#201E19] uppercase">
                   {lead.collageImages[0]?.caption}
                 </div>
-                <div className="h-20 mt-2 bg-[#E4DDD0] border border-[#1A1A1A]/30 flex items-center justify-center font-serif text-2xl font-black text-[#111111]/80 tracking-widest">
+                <div className="h-20 mt-2 bg-[#D7CCB2] border border-[#766E5F]/30 flex items-center justify-center font-serif text-2xl font-black text-[#201E19]/80 tracking-widest">
                   Aa Bb Gg 1926
                 </div>
               </div>
@@ -179,35 +181,35 @@ export default function DesignScene({ onOpenStory }) {
               {/* Collage Item 2 */}
               <div
                 ref={card2Ref}
-                className="p-4 border-2 border-[#1A1A1A] bg-[#ECE6D8] ml-4 sm:ml-8 shadow-sm will-change-transform transform-gpu"
+                className="p-4 border-2 border-[#766E5F] bg-[#DFD5BC] ml-4 sm:ml-8 shadow-sm will-change-transform transform-gpu"
               >
-                <div className="flex items-center justify-between text-[10px] font-mono text-[#A71919] font-bold mb-1">
+                <div className="flex items-center justify-between text-[10px] font-mono text-[#9F3028] font-bold mb-1">
                   <span>EXHIBIT 02</span>
                   <span>{lead.collageImages[1]?.meta}</span>
                 </div>
-                <div className="font-serif font-bold text-lg text-[#111111] uppercase">
+                <div className="font-serif font-bold text-lg text-[#201E19] uppercase">
                   {lead.collageImages[1]?.caption}
                 </div>
                 <div className="mt-2 space-y-1">
-                  <div className="h-[2px] bg-[#111111] w-full" />
-                  <div className="h-[1px] bg-[#111111] w-3/4" />
-                  <div className="h-[1px] bg-[#A71919] w-1/2" />
+                  <div className="h-[2px] bg-[#201E19] w-full" />
+                  <div className="h-[1px] bg-[#201E19] w-3/4" />
+                  <div className="h-[1px] bg-[#9F3028] w-1/2" />
                 </div>
               </div>
 
               {/* Collage Item 3 */}
               <div
                 ref={card3Ref}
-                className="p-4 border-2 border-[#1A1A1A] bg-[#F2EEE5] mr-4 sm:mr-8 shadow-xs will-change-transform transform-gpu"
+                className="p-4 border-2 border-[#766E5F] bg-[#E8DFC8] mr-4 sm:mr-8 shadow-xs will-change-transform transform-gpu"
               >
-                <div className="flex items-center justify-between text-[10px] font-mono text-[#A71919] font-bold mb-1">
+                <div className="flex items-center justify-between text-[10px] font-mono text-[#9F3028] font-bold mb-1">
                   <span>EXHIBIT 03</span>
                   <span>{lead.collageImages[2]?.meta}</span>
                 </div>
-                <div className="font-serif font-bold text-lg text-[#111111] uppercase">
+                <div className="font-serif font-bold text-lg text-[#201E19] uppercase">
                   {lead.collageImages[2]?.caption}
                 </div>
-                <p className="font-serif text-xs text-[#555555] italic mt-1">
+                <p className="font-serif text-xs text-[#39352D] italic mt-1">
                   Simulating organic grain and ink dispersal in SVG shader networks.
                 </p>
               </div>

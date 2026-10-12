@@ -52,7 +52,24 @@ const liveDispatches = [
   }
 ];
 
+const BACKEND_API_URL =
+  process.env.BACKEND_API_URL || "http://localhost:5000/api";
+
 export async function GET() {
+  try {
+    const res = await fetch(`${BACKEND_API_URL}/newsroom/live`, {
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.dispatches) && json.dispatches.length > 0) {
+        return NextResponse.json(json);
+      }
+    }
+  } catch (err) {
+    // fallback
+  }
+
   return NextResponse.json({
     status: "ok",
     hasNewDispatches: true,
@@ -61,3 +78,4 @@ export async function GET() {
     timestamp: new Date().toISOString(),
   });
 }
+

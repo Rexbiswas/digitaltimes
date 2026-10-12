@@ -11,23 +11,15 @@ const MONTH_NAMES = [
 const DAYS_HEADER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 
 export default function CalendarDateSelector({
-  selectedDate = "2026-10-05",
+  selectedDate = null,
   onSelectDate,
-  availableDates = [
-    "2026-10-05",
-    "2026-10-04",
-    "2026-10-03",
-    "2026-10-02",
-    "2026-10-01",
-    "2026-09-30",
-    "2026-09-29"
-  ],
+  availableDates = [],
   className = ""
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
-  // Parse currently selected date or default to Oct 2026
+  // Parse currently selected date or default to latest available edition or current month
   const getInitialYearMonth = () => {
     if (selectedDate && typeof selectedDate === "string") {
       const parts = selectedDate.split("-");
@@ -35,7 +27,14 @@ export default function CalendarDateSelector({
         return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) - 1 };
       }
     }
-    return { year: 2026, month: 9 }; // Oct is 9 (0-indexed)
+    if (availableDates && availableDates.length > 0) {
+      const parts = availableDates[0].split("-");
+      if (parts && parts.length === 3) {
+        return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) - 1 };
+      }
+    }
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
   };
 
   const [{ year, month }, setViewingMonth] = useState(getInitialYearMonth);
@@ -96,10 +95,10 @@ export default function CalendarDateSelector({
     setIsOpen(false);
   };
 
-  // Format label for button
+  // Format label for button: indicates UPDATED NEWS by default
   const dateInfo = (() => {
-    if (!selectedDate || typeof selectedDate !== "string") {
-      return { isToday: false, label: "ALL EDITIONS" };
+    if (!selectedDate || typeof selectedDate !== "string" || selectedDate === "latest") {
+      return { isLive: true, label: "UPDATED NEWS" };
     }
     const parts = selectedDate.split("-");
     if (parts && parts.length === 3) {
@@ -107,10 +106,9 @@ export default function CalendarDateSelector({
       const m = parseInt(parts[1], 10) - 1;
       const d = parseInt(parts[2], 10);
       const mShort = MONTH_NAMES[m]?.slice(0, 3) || "OCT";
-      const isToday = selectedDate === "2026-10-05";
-      return { isToday, label: `${mShort} ${d}, ${y}` };
+      return { isLive: false, label: `${mShort} ${d}, ${y}` };
     }
-    return { isToday: false, label: selectedDate };
+    return { isLive: false, label: selectedDate };
   })();
 
   return (
@@ -119,15 +117,21 @@ export default function CalendarDateSelector({
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="flex items-center gap-1 sm:gap-2 bg-[#FAF7F0] hover:bg-[#EFEAE0] border border-[#1A1A1A]/20 hover:border-[#1A1A1A] text-[#111111] px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-mono font-bold transition-all shadow-xs cursor-pointer active:scale-98 whitespace-nowrap"
+        className="flex items-center gap-1 sm:gap-2 bg-[#EFE8D5] hover:bg-[#EFEAE0] border border-[#766E5F]/20 hover:border-[#766E5F] text-[#201E19] px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-mono font-bold transition-all shadow-xs cursor-pointer active:scale-98 whitespace-nowrap"
         title={`Selected Date: ${dateInfo.label} (Click to change)`}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
       >
-        <Calendar className="w-3.5 h-3.5 text-[#A71919] shrink-0" />
-        <span className="hidden md:inline uppercase tracking-wider">
-          {dateInfo.isToday && <span>TODAY • </span>}
-          {dateInfo.label}
+        <Calendar className="w-3.5 h-3.5 text-[#9F3028] shrink-0" />
+        <span className="uppercase tracking-wider">
+          {dateInfo.isLive ? (
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>UPDATED NEWS</span>
+            </span>
+          ) : (
+            dateInfo.label
+          )}
         </span>
         <ChevronDown
           className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#666666] transition-transform duration-200 ${
@@ -138,14 +142,14 @@ export default function CalendarDateSelector({
 
       {/* Interactive Calendar Popover */}
       {isOpen && (
-        <div className="absolute -left-12 sm:left-0 mt-2 z-50 w-72 sm:w-80 max-w-[calc(100vw-2rem)] bg-[#FAF7F0] border-2 border-[#1A1A1A] rounded-2xl shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute -left-12 sm:left-0 mt-2 z-50 w-72 sm:w-80 max-w-[calc(100vw-2rem)] bg-[#EFE8D5] border-2 border-[#766E5F] rounded-2xl shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150">
           {/* Header Bar */}
-          <div className="flex items-center justify-between border-b border-[#1A1A1A]/15 pb-2.5 mb-3">
+          <div className="flex items-center justify-between border-b border-[#766E5F]/15 pb-2.5 mb-3">
             <div>
               <span className="block text-[9px] font-mono uppercase tracking-widest text-[#777777] font-bold">
                 BROADSHEET ARCHIVES
               </span>
-              <h4 className="font-serif font-bold text-sm sm:text-base text-[#111111] leading-tight">
+              <h4 className="font-serif font-bold text-sm sm:text-base text-[#201E19] leading-tight">
                 {MONTH_NAMES[month]} {year}
               </h4>
             </div>
@@ -155,7 +159,7 @@ export default function CalendarDateSelector({
               <button
                 type="button"
                 onClick={prevMonth}
-                className="p-1 hover:bg-[#1A1A1A]/10 rounded-lg text-[#111111] transition-colors cursor-pointer"
+                className="p-1 hover:bg-[#766E5F]/10 rounded-lg text-[#201E19] transition-colors cursor-pointer"
                 title="Previous Month"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -163,7 +167,7 @@ export default function CalendarDateSelector({
               <button
                 type="button"
                 onClick={nextMonth}
-                className="p-1 hover:bg-[#1A1A1A]/10 rounded-lg text-[#111111] transition-colors cursor-pointer"
+                className="p-1 hover:bg-[#766E5F]/10 rounded-lg text-[#201E19] transition-colors cursor-pointer"
                 title="Next Month"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -205,12 +209,12 @@ export default function CalendarDateSelector({
                   onClick={() => handleDayClick(dayNum)}
                   className={`h-8 w-8 mx-auto flex flex-col items-center justify-center rounded-lg text-xs font-mono transition-all relative cursor-pointer ${
                     isSelected
-                      ? "bg-[#111111] text-[#F2EEE5] font-bold shadow-sm"
+                      ? "bg-[#201E19] text-[#E8DFC8] font-bold shadow-sm"
                       : isToday
-                      ? "border border-[#A71919] font-bold text-[#A71919] hover:bg-[#A71919]/10"
+                      ? "border border-[#9F3028] font-bold text-[#9F3028] hover:bg-[#9F3028]/10"
                       : hasNews
-                      ? "font-bold text-[#111111] hover:bg-[#1A1A1A]/10"
-                      : "text-[#888888] hover:bg-[#1A1A1A]/5 hover:text-[#111111]"
+                      ? "font-bold text-[#201E19] hover:bg-[#766E5F]/10"
+                      : "text-[#888888] hover:bg-[#766E5F]/5 hover:text-[#201E19]"
                   }`}
                   title={`${MONTH_NAMES[month]} ${dayNum}, ${year}${
                     hasNews ? " (Stories Published)" : ""
@@ -219,7 +223,7 @@ export default function CalendarDateSelector({
                   <span className="leading-none">{dayNum}</span>
                   {/* Indicator dot if stories exist on this date */}
                   {hasNews && !isSelected && (
-                    <span className="w-1 h-1 rounded-full bg-[#A71919] mt-0.5" />
+                    <span className="w-1 h-1 rounded-full bg-[#9F3028] mt-0.5" />
                   )}
                   {isSelected && (
                     <span className="w-1 h-1 rounded-full bg-emerald-400 mt-0.5" />
@@ -230,7 +234,7 @@ export default function CalendarDateSelector({
           </div>
 
           {/* Quick Edition Presets */}
-          <div className="mt-3.5 pt-2.5 border-t border-[#1A1A1A]/15 flex flex-col gap-1.5">
+          <div className="mt-3.5 pt-2.5 border-t border-[#766E5F]/15 flex flex-col gap-1.5">
             <span className="text-[9px] font-mono uppercase tracking-wider text-[#777777] font-semibold">
               QUICK DISPATCH EDITIONS:
             </span>
@@ -238,65 +242,43 @@ export default function CalendarDateSelector({
               <button
                 type="button"
                 onClick={() => {
-                  onSelectDate?.("2026-10-05");
-                  setViewingMonth({ year: 2026, month: 9 });
-                  setIsOpen(false);
-                }}
-                className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                  selectedDate === "2026-10-05"
-                    ? "bg-[#111111] text-[#F2EEE5] border-[#111111]"
-                    : "bg-[#EFEAE0] hover:bg-[#E4DDD0] border-[#1A1A1A]/20 text-[#222222]"
-                }`}
-              >
-                Today (Oct 5)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectDate?.("2026-10-01");
-                  setViewingMonth({ year: 2026, month: 9 });
-                  setIsOpen(false);
-                }}
-                className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                  selectedDate === "2026-10-01"
-                    ? "bg-[#111111] text-[#F2EEE5] border-[#111111]"
-                    : "bg-[#EFEAE0] hover:bg-[#E4DDD0] border-[#1A1A1A]/20 text-[#222222]"
-                }`}
-              >
-                Oct 1 Edition
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectDate?.("2026-09-30");
-                  setViewingMonth({ year: 2026, month: 8 });
-                  setIsOpen(false);
-                }}
-                className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                  selectedDate === "2026-09-30"
-                    ? "bg-[#111111] text-[#F2EEE5] border-[#111111]"
-                    : "bg-[#EFEAE0] hover:bg-[#E4DDD0] border-[#1A1A1A]/20 text-[#222222]"
-                }`}
-              >
-                Sep 30 Broadsheet
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
                   onSelectDate?.(null);
                   setIsOpen(false);
                 }}
-                className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                  !selectedDate
-                    ? "bg-[#111111] text-[#F2EEE5] border-[#111111]"
-                    : "bg-[#EFEAE0] hover:bg-[#E4DDD0] border-[#1A1A1A]/20 text-[#555555]"
+                className={`px-2 py-0.5 rounded border transition-colors cursor-pointer font-bold ${
+                  !selectedDate || selectedDate === "latest"
+                    ? "bg-[#201E19] text-[#E8DFC8] border-[#766E5F]"
+                    : "bg-[#EFEAE0] hover:bg-[#D7CCB2] border-[#766E5F]/20 text-[#222222]"
                 }`}
               >
-                All Dates
+                ● Live Updated News
               </button>
+
+              {availableDates.slice(0, 4).map((d) => {
+                const parts = d.split("-");
+                if (parts.length !== 3) return null;
+                const mIdx = parseInt(parts[1], 10) - 1;
+                const dayNum = parseInt(parts[2], 10);
+                const shortLabel = `${MONTH_NAMES[mIdx]?.slice(0, 3) || "ED"} ${dayNum} Archive`;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => {
+                      onSelectDate?.(d);
+                      setViewingMonth({ year: parseInt(parts[0], 10), month: mIdx });
+                      setIsOpen(false);
+                    }}
+                    className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                      selectedDate === d
+                        ? "bg-[#201E19] text-[#E8DFC8] border-[#766E5F] font-bold"
+                        : "bg-[#EFEAE0] hover:bg-[#D7CCB2] border-[#766E5F]/20 text-[#222222]"
+                    }`}
+                  >
+                    {shortLabel}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

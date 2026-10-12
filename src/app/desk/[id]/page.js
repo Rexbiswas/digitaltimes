@@ -40,7 +40,7 @@ export default function DeskPage({ params }) {
   );
 
   return (
-    <div className="min-h-screen paper-texture-bg bg-[#F2EEE5] text-[#111111]">
+    <div className="min-h-screen paper-texture-bg bg-[#E8DFC8] text-[#201E19]">
       {/* Masthead */}
       <Masthead />
 
@@ -48,20 +48,20 @@ export default function DeskPage({ params }) {
       <NavigationStrip activeDesk={deskId} />
 
       {/* Desk Breadcrumb & Route Banner */}
-      <div className="w-full bg-[#ECE6D8] border-b border-[#1A1A1A] py-3">
+      <div className="w-full bg-[#DFD5BC] border-b border-[#766E5F] py-3">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 flex items-center justify-between text-xs font-mono">
           <Link
             href="/"
-            className="flex items-center gap-2 font-bold text-[#A71919] hover:underline uppercase tracking-wider"
+            className="flex items-center gap-2 font-bold text-[#9F3028] hover:underline uppercase tracking-wider"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>RETURN TO FULL FRONT PAGE BROADSHEET</span>
           </Link>
 
-          <div className="flex items-center gap-3 font-mono text-[11px] text-[#555555]">
+          <div className="flex items-center gap-3 font-mono text-[11px] text-[#39352D]">
             <span>EDITION: {deskInfo.label}</span>
             <span>•</span>
-            <span className="font-bold text-[#111111]">PAGE {deskInfo.page}</span>
+            <span className="font-bold text-[#201E19]">PAGE {deskInfo.page}</span>
           </div>
         </div>
       </div>
@@ -88,8 +88,8 @@ export default function DeskPage({ params }) {
 
       {/* Related Desk Dispatches */}
       {deskArticles.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-4 sm:px-6 py-10 border-t-2 border-[#1A1A1A]">
-          <div className="border-b border-[#1A1A1A] pb-2 mb-6 flex items-center justify-between font-mono text-xs text-[#111111]">
+        <section className="max-w-[1400px] mx-auto px-4 sm:px-6 py-10 border-t-2 border-[#766E5F]">
+          <div className="border-b border-[#766E5F] pb-2 mb-6 flex items-center justify-between font-mono text-xs text-[#201E19]">
             <span className="font-bold tracking-widest uppercase">
               ARCHIVED DISPATCHES FROM {deskInfo.label}
             </span>
@@ -101,15 +101,15 @@ export default function DeskPage({ params }) {
               <div
                 key={article.id}
                 onClick={() => setSelectedArticle(article)}
-                className="p-4 border border-[#1A1A1A] bg-[#ECE6D8]/50 hover:bg-[#ECE6D8] cursor-pointer transition-colors"
+                className="p-4 border border-[#766E5F] bg-[#DFD5BC]/50 hover:bg-[#DFD5BC] cursor-pointer transition-colors"
               >
-                <div className="text-[10px] font-mono text-[#A71919] uppercase font-bold mb-1">
+                <div className="text-[10px] font-mono text-[#9F3028] uppercase font-bold mb-1">
                   {article.page || "PAGE 01"} • {article.readTime || "5 MIN READ"}
                 </div>
-                <h4 className="font-serif font-bold text-lg text-[#111111] hover:text-[#A71919] leading-snug mb-2">
+                <h4 className="font-serif font-bold text-lg text-[#201E19] hover:text-[#9F3028] leading-snug mb-2">
                   {article.headline}
                 </h4>
-                <p className="font-serif text-xs text-[#444444] line-clamp-3">
+                <p className="font-serif text-xs text-[#39352D] line-clamp-3">
                   {article.deck}
                 </p>
               </div>

@@ -142,9 +142,9 @@ export default function NewsroomUpdateToast({
       onMouseLeave={() => setIsPaused(false)}
       className="fixed bottom-3 right-3 sm:bottom-6 sm:right-6 left-auto z-40 select-none animate-in slide-in-from-right-4 fade-in duration-300"
     >
-      <div className="w-[calc(100vw-1.5rem)] sm:w-[350px] bg-[#FAF7F0] text-[#111111] border border-[#1A1A1A] shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden hover:border-[#A71919]">
+      <div className="w-[calc(100vw-1.5rem)] sm:w-[350px] bg-[#EFE8D5] text-[#201E19] border border-[#766E5F] shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden hover:border-[#9F3028]">
         {/* Top Header Row (Cross-fades smoothly between compact wire ticker and newsroom control bar) */}
-        <div className="relative overflow-hidden bg-[#ECE6D8] border-b border-[#1A1A1A]/20 transition-all duration-300 min-h-[38px] flex items-center">
+        <div className="relative overflow-hidden bg-[#DFD5BC] border-b border-[#766E5F]/20 transition-all duration-300 min-h-[38px] flex items-center">
           {/* 1. Collapsed Header State */}
           <div
             onClick={() => setIsExpanded(true)}
@@ -157,22 +157,22 @@ export default function NewsroomUpdateToast({
           >
             {/* Live pulsing red indicator */}
             <span className="relative flex h-2 w-2 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#A71919] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#A71919]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#9F3028] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#9F3028]"></span>
             </span>
 
             {/* Desk Badge */}
-            <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-[#111111] text-[#F2EEE5] px-1.5 py-0.5 shrink-0">
+            <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-[#201E19] text-[#E8DFC8] px-1.5 py-0.5 shrink-0">
               {currentDispatch.desk || "WIRE"}
             </span>
 
             {/* Single line headline snippet */}
-            <span className="font-serif font-bold text-xs text-[#111111] truncate flex-1 hover:text-[#A71919] transition-colors leading-tight">
+            <span className="font-serif font-bold text-xs text-[#201E19] truncate flex-1 hover:text-[#9F3028] transition-colors leading-tight">
               {currentDispatch.headline}
             </span>
 
             {/* Extend button */}
-            <div className="flex items-center gap-1 text-[10px] font-mono text-[#A71919] shrink-0 font-bold ml-1 hover:underline">
+            <div className="flex items-center gap-1 text-[10px] font-mono text-[#9F3028] shrink-0 font-bold ml-1 hover:underline">
               <span className="hidden sm:inline">EXTEND</span>
               <ChevronUp className="w-3.5 h-3.5" />
             </div>
@@ -185,7 +185,7 @@ export default function NewsroomUpdateToast({
                 setIsVisible(false);
                 setIsDismissed(true);
               }}
-              className="p-1 text-[#666666] hover:text-[#111111] hover:bg-[#1A1A1A]/10 transition-colors shrink-0 cursor-pointer"
+              className="p-1 text-[#666666] hover:text-[#201E19] hover:bg-[#766E5F]/10 transition-colors shrink-0 cursor-pointer"
               title="Dismiss notification"
             >
               <X className="w-3 h-3" />
@@ -202,13 +202,13 @@ export default function NewsroomUpdateToast({
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#A71919] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#A71919]"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#9F3028] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#9F3028]"></span>
               </span>
-              <span className="font-bold tracking-wider uppercase text-[#A71919] text-[9.5px] truncate">
+              <span className="font-bold tracking-wider uppercase text-[#9F3028] text-[9.5px] truncate">
                 NEWSROOM UPDATE
               </span>
-              <span className="text-[8.5px] bg-[#111111] text-[#F2EEE5] px-1 py-0.2 font-bold uppercase shrink-0">
+              <span className="text-[8.5px] bg-[#201E19] text-[#E8DFC8] px-1 py-0.2 font-bold uppercase shrink-0">
                 {currentDispatch.desk || "WIRE"}
               </span>
             </div>
@@ -216,22 +216,22 @@ export default function NewsroomUpdateToast({
             {/* Carousel & Controls */}
             <div className="flex items-center gap-1 shrink-0 ml-1.5">
               {dispatches.length > 1 && (
-                <div className="flex items-center gap-0.5 text-[9px] font-mono text-[#555555]">
+                <div className="flex items-center gap-0.5 text-[9px] font-mono text-[#39352D]">
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="p-0.5 hover:bg-[#1A1A1A]/10 text-[#333333] cursor-pointer"
+                    className="p-0.5 hover:bg-[#766E5F]/10 text-[#39352D] cursor-pointer"
                     title="Previous dispatch"
                   >
                     <ChevronLeft className="w-2.5 h-2.5" />
                   </button>
-                  <span className="font-bold text-[#111111]">
+                  <span className="font-bold text-[#201E19]">
                     {currentIndex + 1}/{dispatches.length}
                   </span>
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="p-0.5 hover:bg-[#1A1A1A]/10 text-[#333333] cursor-pointer"
+                    className="p-0.5 hover:bg-[#766E5F]/10 text-[#39352D] cursor-pointer"
                     title="Next dispatch"
                   >
                     <ChevronRight className="w-2.5 h-2.5" />
@@ -243,7 +243,7 @@ export default function NewsroomUpdateToast({
               <button
                 type="button"
                 onClick={() => setIsExpanded(false)}
-                className="p-1 text-[#666666] hover:text-[#111111] hover:bg-[#1A1A1A]/10 cursor-pointer transition-colors"
+                className="p-1 text-[#666666] hover:text-[#201E19] hover:bg-[#766E5F]/10 cursor-pointer transition-colors"
                 title="Collapse dispatch"
               >
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -256,7 +256,7 @@ export default function NewsroomUpdateToast({
                   setIsVisible(false);
                   setIsDismissed(true);
                 }}
-                className="p-1 text-[#666666] hover:text-[#111111] hover:bg-[#1A1A1A]/10 cursor-pointer transition-colors"
+                className="p-1 text-[#666666] hover:text-[#201E19] hover:bg-[#766E5F]/10 cursor-pointer transition-colors"
                 title="Dismiss notification"
               >
                 <X className="w-3 h-3" />
@@ -278,7 +278,7 @@ export default function NewsroomUpdateToast({
               className="p-3 cursor-pointer hover:bg-[#F4EFE5] transition-colors group"
             >
               <div className="flex items-center justify-between text-[9px] font-mono text-[#666666] mb-1">
-                <span className="flex items-center gap-1 font-semibold text-[#A71919]">
+                <span className="flex items-center gap-1 font-semibold text-[#9F3028]">
                   <Radio className="w-2.5 h-2.5 animate-pulse" />
                   <span>{currentDispatch.time || "JUST NOW"}</span>
                 </span>
@@ -287,18 +287,18 @@ export default function NewsroomUpdateToast({
                 </span>
               </div>
 
-              <h4 className="font-serif font-bold text-xs text-[#111111] leading-snug mb-1 hover:text-[#A71919] transition-colors line-clamp-2">
+              <h4 className="font-serif font-bold text-xs text-[#201E19] leading-snug mb-1 hover:text-[#9F3028] transition-colors line-clamp-2">
                 {currentDispatch.headline}
               </h4>
 
-              <p className="font-serif text-[10.5px] text-[#555555] line-clamp-2 leading-relaxed">
+              <p className="font-serif text-[10.5px] text-[#39352D] line-clamp-2 leading-relaxed">
                 {currentDispatch.deck ||
                   "Updated dispatch just received from editorial bureau."}
               </p>
 
               {/* Action Button Strip */}
-              <div className="mt-2 pt-1.5 border-t border-[#1A1A1A]/15 flex items-center justify-between text-[10px] font-mono">
-                <div className="inline-flex items-center gap-1 font-bold text-[#A71919] group-hover:underline uppercase tracking-wider text-[10px]">
+              <div className="mt-2 pt-1.5 border-t border-[#766E5F]/15 flex items-center justify-between text-[10px] font-mono">
+                <div className="inline-flex items-center gap-1 font-bold text-[#9F3028] group-hover:underline uppercase tracking-wider text-[10px]">
                   <span>READ DISPATCH</span>
                   <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
                 </div>
@@ -310,9 +310,9 @@ export default function NewsroomUpdateToast({
             </div>
 
             {/* Dynamic Animated Progress Bar */}
-            <div className="h-[2px] w-full bg-[#1A1A1A]/10 overflow-hidden">
+            <div className="h-[2px] w-full bg-[#766E5F]/10 overflow-hidden">
               <div
-                className="h-full bg-[#A71919] transition-all ease-linear"
+                className="h-full bg-[#9F3028] transition-all ease-linear"
                 style={{ width: `${progress}%` }}
               />
             </div>
