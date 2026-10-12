@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const {
   loginOrRegister,
+  forgotPassword,
+  resetPassword,
   getProfile,
   getBookmarks,
   addBookmark,
@@ -21,6 +23,8 @@ const {
 const { requireAuth } = require("../middleware/auth");
 
 router.post("/auth", loginOrRegister);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 router.get("/profile", requireAuth, getProfile);
 
 // Bookmarks (Clippings)

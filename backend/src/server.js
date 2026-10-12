@@ -56,7 +56,7 @@ app.use("/api", apiLimiter);
 // 2. Initialize Real-Time WebSockets
 const io = initSocket(httpServer);
 
-// 3. API Routes
+// 3. API Routes & Real-Time Handlers
 // GET /api/health
 app.get("/api/health", (req, res) => {
   const connected = isDbConnected();

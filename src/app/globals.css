@@ -361,15 +361,16 @@ html.lenis body {
   animation: inkPulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.newspaper-skeleton-shimmer {
-  background: linear-gradient(
+.vintage-skeleton-surface {
+  background-color: #D4C8AF;
+  background-image: linear-gradient(
     90deg,
-    rgba(223, 213, 188, 0.7) 0%,
-    rgba(239, 232, 213, 0.95) 50%,
-    rgba(223, 213, 188, 0.7) 100%
+    #D4C8AF 0%,
+    rgba(240, 233, 218, 0.85) 50%,
+    #D4C8AF 100%
   );
   background-size: 200% 100%;
-  animation: paperShimmer 2.4s infinite ease-in-out;
+  animation: paperShimmer 1.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .animate-teletype-blink {
@@ -381,11 +382,14 @@ html.lenis body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-ink-pulse,
+  .vintage-skeleton-surface,
   .newspaper-skeleton-shimmer,
+  .animate-ink-pulse,
   .animate-teletype-blink,
   .animate-linotype-spin {
     animation: none !important;
+    background-image: none !important;
+    background-color: #D4C8AF !important;
   }
 }
 

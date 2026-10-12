@@ -4,45 +4,249 @@ const Bookmark = require("../models/Bookmark");
 const ReadingHistory = require("../models/ReadingHistory");
 const jwt = require("jsonwebtoken");
 const env = require("../config/env");
+const { sendPasswordResetEmail } = require("../services/emailService");
 
 const generateToken = (id) => {
   return jwt.sign({ id }, env.JWT_SECRET, { expiresIn: "30d" });
 };
 
+// Password regex: minimum 8 characters, at least one uppercase letter, one lowercase letter, and one number
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&#^~_.\-+=[\]{}()]{8,}$/;
+
 // POST /api/users/auth
 const loginOrRegister = async (req, res, next) => {
   try {
-    const { email, name, password } = req.body;
+    const { email, name, password, action = "login", topics } = req.body;
 
-    if (!email) {
+    if (!email || typeof email !== "string" || !email.trim()) {
       return res.status(400).json({
         success: false,
         message: "Email address is required.",
       });
     }
 
-    let user = await User.findOne({ email: email.toLowerCase() });
-
-    if (!user) {
-      user = await User.create({
-        name: name || email.split("@")[0],
-        email: email.toLowerCase(),
-        password: password || "times_default_pass",
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid telegraph email address format.",
       });
     }
 
-    const token = generateToken(user._id);
+    const cleanEmail = email.trim().toLowerCase();
+    const existingUser = await User.findOne({ email: cleanEmail }).select("+password");
 
-    res.json({
+    // ─────────────────────────────────────────────────────────────
+    // 1. SIGNUP / REGISTRATION FLOW (For new users)
+    // ─────────────────────────────────────────────────────────────
+    if (action === "signup") {
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          code: "USER_ALREADY_EXISTS",
+          message: "A reader profile with this email already exists. Please sign in instead.",
+        });
+      }
+
+      if (!password || password.length < 8) {
+        return res.status(400).json({
+          success: false,
+          code: "PASSWORD_TOO_SHORT",
+          message: "Cipher passcode must contain at least 8 characters.",
+        });
+      }
+
+      if (!PASSWORD_REGEX.test(password)) {
+        return res.status(400).json({
+          success: false,
+          code: "PASSWORD_INVALID_REGEX",
+          message: "Passcode must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number.",
+        });
+      }
+
+      const newUser = await User.create({
+        name: (name && name.trim()) || cleanEmail.split("@")[0],
+        email: cleanEmail,
+        password: password,
+        preferences: {
+          favoriteDesks: Array.isArray(topics) && topics.length > 0 ? topics : ["ai", "web", "startups"],
+        },
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: "Reader profile enrolled successfully. You may now sign in with your cipher passcode.",
+        user: {
+          id: newUser._id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+        },
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 3. FORGOT / RESET PASSCODE ACTIONS
+    // ─────────────────────────────────────────────────────────────
+    if (action === "forgot-password") {
+      return forgotPassword(req, res, next);
+    }
+    if (action === "reset-password") {
+      return resetPassword(req, res, next);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 2. SIGNIN / LOGIN FLOW (For existing users)
+    // ─────────────────────────────────────────────────────────────
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        code: "USER_NOT_FOUND",
+        message: "No subscriber profile found with this telegraph email. Please sign up first.",
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "Cipher passcode is required to sign in.",
+      });
+    }
+
+    const isMatch = await existingUser.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        code: "INVALID_CREDENTIALS",
+        message: "Invalid cipher passcode. Please check your credentials and try again.",
+      });
+    }
+
+    const token = generateToken(existingUser._id);
+
+    return res.json({
       success: true,
       token,
       user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        preferences: user.preferences,
+        id: existingUser._id,
+        name: existingUser.name,
+        email: existingUser.email,
+        role: existingUser.role,
+        preferences: existingUser.preferences,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/users/forgot-password
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Telegraph email address is required.",
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: cleanEmail });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: "USER_NOT_FOUND",
+        message: "No subscriber profile found with this telegraph email. Please check your address or sign up.",
+      });
+    }
+
+    // Generate 6-digit cryptographic recovery code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+
+    user.resetCode = resetCode;
+    user.resetCodeExpires = expiresAt;
+    await user.save();
+
+    // Dispatch recovery code to the subscriber's email address
+    await sendPasswordResetEmail(cleanEmail, resetCode, user.name);
+
+    return res.json({
+      success: true,
+      message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and enter the code below.`,
+      email: cleanEmail,
+      expiresInMinutes: 15,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/users/reset-password
+const resetPassword = async (req, res, next) => {
+  try {
+    const { email, resetCode, newPassword } = req.body;
+
+    if (!email || !resetCode || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email, recovery code, and new cipher passcode are all required.",
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: cleanEmail }).select("+resetCode +resetCodeExpires +password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: "USER_NOT_FOUND",
+        message: "No subscriber profile found with this telegraph email.",
+      });
+    }
+
+    if (!user.resetCode || user.resetCode !== String(resetCode).trim()) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_RESET_CODE",
+        message: "Invalid recovery cipher code. Please check the 6-digit code provided.",
+      });
+    }
+
+    if (!user.resetCodeExpires || user.resetCodeExpires < new Date()) {
+      return res.status(400).json({
+        success: false,
+        code: "EXPIRED_RESET_CODE",
+        message: "Recovery cipher code has expired. Please request a fresh transmission.",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        code: "PASSWORD_TOO_SHORT",
+        message: "New cipher passcode must contain at least 8 characters.",
+      });
+    }
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        code: "PASSWORD_INVALID_REGEX",
+        message: "Passcode must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number.",
+      });
+    }
+
+    user.password = newPassword;
+    user.resetCode = undefined;
+    user.resetCodeExpires = undefined;
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Cipher passcode successfully reset in subscriber registry. You may now sign in with your new passcode.",
     });
   } catch (err) {
     next(err);
@@ -296,6 +500,8 @@ const clearReadingHistory = async (req, res, next) => {
 
 module.exports = {
   loginOrRegister,
+  forgotPassword,
+  resetPassword,
   getProfile,
   getBookmarks,
   addBookmark,

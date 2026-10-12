@@ -13,6 +13,62 @@ import {
   allArticles as fallbackAllArticles,
 } from "@/data/newspaperData";
 
+export function cleanEditorialText(text, headline = "") {
+  if (!text || typeof text !== "string") {
+    return headline
+      ? `An investigative dispatch examining ${headline}.`
+      : "An investigative broadsheet correspondence from our editorial desk.";
+  }
+
+  let cleaned = text
+    .replace(/<[^>]*>?/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    !cleaned ||
+    /^(comments?|read more|discuss|continue reading|view comments|discuss on hacker news)$/i.test(cleaned) ||
+    /^https?:\/\//i.test(cleaned) ||
+    /^(comments?|points):\s*\d+/i.test(cleaned) ||
+    cleaned.length < 8
+  ) {
+    return headline
+      ? `An investigative dispatch examining ${headline}.`
+      : "An investigative broadsheet correspondence from our editorial desk.";
+  }
+
+  cleaned = cleaned
+    .replace(/^comments?\s*[:\-•–]?\s*/gi, "")
+    .replace(/\s*[•–\-:]?\s*comments?$/gi, "")
+    .replace(/\[\+\d+\s*chars\]/gi, "")
+    .trim();
+
+  return cleaned || (headline ? `An investigative dispatch examining ${headline}.` : "");
+}
+
+export function sanitizeArticle(art) {
+  if (!art) return art;
+  const headline = art.headline || art.title || "Dispatches";
+  const deck = cleanEditorialText(art.deck || art.description, headline);
+  const leadParagraph = cleanEditorialText(art.leadParagraph || art.content || art.deck, headline);
+
+  const rawParagraphs = Array.isArray(art.bodyParagraphs) && art.bodyParagraphs.length > 0
+    ? art.bodyParagraphs
+    : [art.content || art.deck || ""];
+
+  const bodyParagraphs = rawParagraphs
+    .map((p) => cleanEditorialText(p, headline))
+    .filter((p) => p && !/^(comments?|read more)$/i.test(p.trim()));
+
+  return {
+    ...art,
+    deck,
+    description: deck,
+    leadParagraph,
+    bodyParagraphs: bodyParagraphs.length > 0 ? bodyParagraphs : [leadParagraph],
+  };
+}
+
 /**
  * Presenter that converts any backend MongoDB article document into
  * the exact object structure expected by the existing broadsheet scene components.
@@ -29,19 +85,27 @@ export function mapArticleToBroadsheetFormat(art) {
     })
     .toUpperCase();
 
+  const headline = art.headline || art.title || "UNTITLED DISPATCH";
+  const deck = cleanEditorialText(art.deck || art.description, headline);
+  const leadParagraph = cleanEditorialText(art.leadParagraph || art.content || art.description, headline);
+  const rawParagraphs =
+    Array.isArray(art.bodyParagraphs) && art.bodyParagraphs.length > 0
+      ? art.bodyParagraphs
+      : [art.content || art.description || ""];
+  const bodyParagraphs = rawParagraphs
+    .map((p) => cleanEditorialText(p, headline))
+    .filter((p) => p && !/^(comments?|read more)$/i.test(p.trim()));
+
   return {
     id: art.slug || (art._id ? art._id.toString() : art.id),
     _id: art._id,
     slug: art.slug,
-    headline: art.headline || art.title || "UNTITLED DISPATCH",
-    title: art.title || art.headline || "UNTITLED DISPATCH",
-    deck: art.deck || art.description || "",
-    description: art.description || art.deck || "",
-    leadParagraph: art.leadParagraph || art.content || art.description || "",
-    bodyParagraphs:
-      Array.isArray(art.bodyParagraphs) && art.bodyParagraphs.length > 0
-        ? art.bodyParagraphs
-        : [art.content || art.description || ""],
+    headline,
+    title: art.title || headline,
+    deck,
+    description: deck,
+    leadParagraph,
+    bodyParagraphs: bodyParagraphs.length > 0 ? bodyParagraphs : [leadParagraph],
     pullQuote: art.pullQuote || null,
     author: art.author || "By TIMES EDITORIAL BOARD",
     location: art.location || "CENTRAL BUREAU",

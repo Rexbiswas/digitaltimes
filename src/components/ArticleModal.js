@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Bookmark, Volume2, Pause, Play, Share2, ArrowRight, CornerDownRight, Check } from "lucide-react";
+import { cleanEditorialText } from "@/utils/articlePresenter";
 
 export default function ArticleModal({ article, onClose, onSaveClipping, isSaved }) {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -95,7 +96,7 @@ export default function ArticleModal({ article, onClose, onSaveClipping, isSaved
             </h1>
 
             <p className="font-serif text-lg sm:text-xl text-[#39352D] leading-relaxed max-w-2xl mx-auto mb-4">
-              {article.deck}
+              {cleanEditorialText(article.deck, article.headline)}
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-mono text-[#39352D] uppercase tracking-wider pt-2 border-t border-[#766E5F]/30">
@@ -197,7 +198,7 @@ export default function ArticleModal({ article, onClose, onSaveClipping, isSaved
           <div className="max-w-4xl mx-auto">
             <div className="newspaper-columns-2 text-[15px] sm:text-[16px] font-serif leading-[1.75] text-[#222222]">
               <p className="drop-cap mb-6">
-                {article.leadParagraph || article.body || article.deck || "In the rapid evolution of digital architecture, the boundaries between the physical document and the reactive computation fabric have converged into a singular medium of expression."}
+                {cleanEditorialText(article.leadParagraph || article.body || article.deck, article.headline) || "In the rapid evolution of digital architecture, the boundaries between the physical document and the reactive computation fabric have converged into a singular medium of expression."}
               </p>
 
               {article.bodyParagraphs ? (

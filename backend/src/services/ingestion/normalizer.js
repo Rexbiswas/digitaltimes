@@ -94,10 +94,42 @@ const getMediaForArticle = (title = "", desk = "technology", givenImage = null) 
   return { image, video, videoCaption };
 };
 
+const cleanEditorialText = (text, title = "") => {
+  if (!text || typeof text !== "string") {
+    return title ? `An investigative report examining ${title}.` : "";
+  }
+  let cleaned = text
+    .replace(/<[^>]*>?/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    !cleaned ||
+    /^(comments?|read more|discuss|continue reading|view comments|discuss on hacker news)$/i.test(cleaned) ||
+    /^https?:\/\//i.test(cleaned) ||
+    /^(comments?|points):\s*\d+/i.test(cleaned) ||
+    cleaned.length < 8
+  ) {
+    return title
+      ? `An investigative report examining ${title}.`
+      : "An investigative broadsheet correspondence from our editorial desk.";
+  }
+
+  cleaned = cleaned
+    .replace(/^comments?\s*[:\-•–]?\s*/gi, "")
+    .replace(/\s*[•–\-:]?\s*comments?$/gi, "")
+    .replace(/\[\+\d+\s*chars\]/gi, "")
+    .trim();
+
+  return cleaned || (title ? `An investigative report examining ${title}.` : "");
+};
+
 /* Normalizes an article from NewsAPI format*/
 const normalizeNewsApiArticle = (article) => {
   const title = (article.title || "").replace(/ - [^-]+$/, "").trim(); // Remove publisher suffix
-  const description = article.description || article.content || "";
+  const rawDesc = article.description || article.content || "";
+  const description = cleanEditorialText(rawDesc, title);
+  const content = cleanEditorialText(article.content || description, title);
   const pubDate = article.publishedAt ? new Date(article.publishedAt) : new Date();
   const editionDate = pubDate.toISOString().split("T")[0];
   const media = getMediaForArticle(title, "technology", article.urlToImage);
@@ -108,11 +140,9 @@ const normalizeNewsApiArticle = (article) => {
     slug: generateSlug(title),
     description,
     deck: description,
-    content: article.content || description,
+    content,
     leadParagraph: description,
-    bodyParagraphs: article.content
-      ? [article.content.replace(/\[\+\d+ chars\]$/, "")]
-      : [description],
+    bodyParagraphs: [content || description],
     image: media.image,
     urlToImage: article.urlToImage || media.image,
     imageCaption: title ? `WIRE PHOTO: ${title}` : null,
@@ -126,7 +156,7 @@ const normalizeNewsApiArticle = (article) => {
     publishedAt: pubDate,
     discoveredAt: new Date(),
     editionDate,
-    readTime: calculateReadTime(article.content || description),
+    readTime: calculateReadTime(content || description),
     category: "technology",
     status: "published",
     featured: false,
@@ -140,7 +170,10 @@ const normalizeNewsApiArticle = (article) => {
  */
 const normalizeRssArticle = (item) => {
   const title = (item.rawTitle || "").trim();
-  const description = (item.rawDescription || "").replace(/<[^>]*>?/gm, "").trim();
+  const rawDesc = (item.rawDescription || "").replace(/<[^>]*>?/gm, "").trim();
+  const description = cleanEditorialText(rawDesc, title);
+  const rawContent = (item.rawContent || "").replace(/<[^>]*>?/gm, "").trim();
+  const content = cleanEditorialText(rawContent || description, title);
   const pubDate = item.rawDate ? new Date(item.rawDate) : new Date();
   const editionDate = pubDate.toISOString().split("T")[0];
   const media = getMediaForArticle(title, "technology", item.rawEnclosure);
@@ -151,9 +184,9 @@ const normalizeRssArticle = (item) => {
     slug: generateSlug(title),
     description,
     deck: description,
-    content: item.rawContent || description,
+    content,
     leadParagraph: description,
-    bodyParagraphs: [description],
+    bodyParagraphs: [content || description],
     image: media.image,
     urlToImage: item.rawEnclosure || media.image,
     imageCaption: `BROADSHEET ILLUSTRATION: ${title}`,

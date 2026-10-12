@@ -2,6 +2,7 @@
 
 import { leadStory, frontPageSecondaryStories } from "@/data/newspaperData";
 import { Bookmark, ArrowRight, CornerDownRight, Play } from "lucide-react";
+import { cleanEditorialText } from "@/utils/articlePresenter";
 
 export default function FrontPageScene({
   onOpenStory,
@@ -10,8 +11,20 @@ export default function FrontPageScene({
   articles,
   lead,
 }) {
-  const currentLead = lead || leadStory;
-  const list = Array.isArray(articles) && articles.length > 0 ? articles : frontPageSecondaryStories;
+  const currentLead = lead
+    ? {
+        ...lead,
+        deck: cleanEditorialText(lead.deck, lead.headline),
+        leadParagraph: cleanEditorialText(lead.leadParagraph, lead.headline),
+      }
+    : leadStory;
+
+  const rawList = Array.isArray(articles) && articles.length > 0 ? articles : frontPageSecondaryStories;
+  const list = rawList.map((s) => ({
+    ...s,
+    deck: cleanEditorialText(s?.deck, s?.headline),
+  }));
+
   const story1 = list[0] || frontPageSecondaryStories[0];
   const story2 = list[1] || frontPageSecondaryStories[1];
   const story3 = list[2] || frontPageSecondaryStories[2];

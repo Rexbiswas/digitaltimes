@@ -9,10 +9,10 @@ const connectDB = async () => {
 
     console.log(`[Database] Attempting connection to MongoDB at: ${env.MONGODB_URI}...`);
     
-    // Connect with a 2-second timeout to prevent hanging on boot
+    // Connect with a 10-second timeout for reliable MongoDB Atlas cloud handshakes
     await mongoose.connect(env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 2000,
-      connectTimeoutMS: 2000,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
     });
 
     isConnected = true;

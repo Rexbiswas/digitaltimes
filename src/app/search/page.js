@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { allArticles, mastheadData } from "@/data/newspaperData";
 import ArticleModal from "@/components/ArticleModal";
+import ArticleListSkeleton from "@/components/skeletons/ArticleListSkeleton";
 
 function SearchContent() {
   const router = useRouter();
@@ -25,6 +26,9 @@ function SearchContent() {
   const [query, setQuery] = useState(initialQuery);
   const [activeTab, setActiveTab] = useState("ALL"); // ALL, ARTICLES, SOURCES, TOPICS
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [articlesPool, setArticlesPool] = useState(allArticles);
+  const [searchError, setSearchError] = useState(null);
   const [currentDateTime, setCurrentDateTime] = useState({
     time: "",
     dateFull: "",
@@ -108,16 +112,51 @@ function SearchContent() {
     "cryptography"
   ];
 
+  // Fetch fresh articles from API on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchArticles = async () => {
+      setIsSearching(true);
+      setSearchError(null);
+      try {
+        const res = await fetch("/api/articles?limit=60", { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.articles && json.articles.length > 0) {
+            setArticlesPool(json.articles);
+          }
+        }
+      } catch (err) {
+        // Keep articlesPool default
+      } finally {
+        if (isMounted) setIsSearching(false);
+      }
+    };
+    fetchArticles();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Debounced search transition when query or tab changes
+  useEffect(() => {
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      setIsSearching(false);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [query, activeTab]);
+
   // Filter stories based on query and activeTab
   const filteredStories = useMemo(() => {
     const q = query.trim().toLowerCase();
-    
-    return allArticles.filter((art) => {
+    const sourceList = Array.isArray(articlesPool) && articlesPool.length > 0 ? articlesPool : allArticles;
+
+    return sourceList.filter((art) => {
       // Tab filter
       if (activeTab === "ARTICLES") {
         if (art.topic === "Topic" || art.desk === "SOURCES") return false;
       } else if (activeTab === "SOURCES") {
-        // Match items with bureau/source citations
         const hasBureau = art.location || art.author?.toLowerCase().includes("team") || art.desk === "SECURITY" || art.desk === "BUSINESS & MARKETS";
         if (!hasBureau && q === "") return false;
       } else if (activeTab === "TOPICS") {
@@ -127,16 +166,16 @@ function SearchContent() {
       // Query filter
       if (!q) return true;
 
-      const inHeadline = art.headline?.toLowerCase().includes(q);
-      const inDeck = art.deck?.toLowerCase().includes(q);
-      const inDesk = art.desk?.toLowerCase().includes(q);
+      const inHeadline = (art.headline || art.title)?.toLowerCase().includes(q);
+      const inDeck = (art.deck || art.description)?.toLowerCase().includes(q);
+      const inDesk = (art.desk || art.category)?.toLowerCase().includes(q);
       const inAuthor = art.author?.toLowerCase().includes(q);
       const inTopic = art.topic?.toLowerCase().includes(q);
       const inBody = art.leadParagraph?.toLowerCase().includes(q);
 
       return inHeadline || inDeck || inDesk || inAuthor || inTopic || inBody;
     });
-  }, [query, activeTab]);
+  }, [query, activeTab, articlesPool]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-[#F7F4EE] text-[#201E19] antialiased overflow-hidden selection:bg-[#201E19] selection:text-[#F7F4EE]">
@@ -291,7 +330,25 @@ function SearchContent() {
       {/* 3. SCROLLABLE STORIES RESULTS LIST CONTAINER */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4">
-          {filteredStories.length === 0 ? (
+          {isSearching ? (
+            <ArticleListSkeleton count={4} />
+          ) : searchError ? (
+            <div className="py-16 text-center border-2 border-dashed border-[#9F3028]/30 rounded-xl p-8 bg-[#FAF8F3]">
+              <Search className="w-8 h-8 text-[#9F3028] mx-auto mb-3 opacity-60" />
+              <p className="font-serif font-bold text-lg text-[#201E19] mb-1">
+                Archives Search Disconnected
+              </p>
+              <p className="font-mono text-xs text-[#777777] max-w-md mx-auto mb-4">
+                Unable to query telegraph archives. Please retry your request.
+              </p>
+              <button
+                onClick={() => setQuery("")}
+                className="px-4 py-2 bg-[#201E19] text-[#F7F4EE] text-xs font-mono font-bold uppercase rounded hover:bg-[#333333] transition-colors cursor-pointer"
+              >
+                Reset Search
+              </button>
+            </div>
+          ) : filteredStories.length === 0 ? (
             <div className="py-16 text-center border-2 border-dashed border-[#D5CFC2] rounded-xl p-8 bg-[#FAF8F3]">
               <Search className="w-8 h-8 text-[#9F3028] mx-auto mb-3 opacity-60" />
               <p className="font-serif font-bold text-lg text-[#201E19] mb-1">

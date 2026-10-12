@@ -36,6 +36,9 @@ import {
 } from "lucide-react";
 import { dashboardRecommendedStories, breakingHeadlines } from "@/data/newspaperData";
 import CalendarDateSelector from "./CalendarDateSelector";
+import { ArticleCardSkeleton, VideoCardSkeleton, SkeletonBlock } from "./skeletons";
+import { useToast } from "@/context/ToastContext";
+import { cleanEditorialText } from "@/utils/articlePresenter";
 
 export default function YourTimesDashboard({
   user,
@@ -440,6 +443,7 @@ export default function YourTimesDashboard({
 
   // Live stories loaded dynamically from NewsAPI / backend server
   const [liveStories, setLiveStories] = useState(dashboardRecommendedStories);
+  const [isLoadingArticles, setIsLoadingArticles] = useState(false);
   const [isSyncingWire, setIsSyncingWire] = useState(false);
   const [wireError, setWireError] = useState(null);
 
@@ -467,12 +471,14 @@ export default function YourTimesDashboard({
       item.editionDate ||
       (item.publishedAt ? item.publishedAt.split("T")[0] : new Date().toISOString().split("T")[0]),
     topic: item.category || item.desk || "Technology",
-    deck: item.deck || item.description || item.headline,
-    leadParagraph: item.leadParagraph || item.deck || item.headline,
+    deck: cleanEditorialText(item.deck || item.description, item.headline || item.title),
+    leadParagraph: cleanEditorialText(item.leadParagraph || item.deck || item.description, item.headline || item.title),
     bodyParagraphs:
       Array.isArray(item.bodyParagraphs) && item.bodyParagraphs.length > 0
         ? item.bodyParagraphs
-        : [item.leadParagraph || item.deck || item.headline],
+            .map((p) => cleanEditorialText(p, item.headline || item.title))
+            .filter((p) => p && !/^(comments?|read more)$/i.test(p.trim()))
+        : [cleanEditorialText(item.leadParagraph || item.deck || item.description, item.headline || item.title)],
     video: item.video || null,
     videoCaption: item.videoCaption || null,
     videoType: item.videoType || "embed",
@@ -483,6 +489,8 @@ export default function YourTimesDashboard({
   const loadLiveArticles = async (isBackground = false) => {
     if (isBackground) {
       setIsSyncingWire(true);
+    } else {
+      setIsLoadingArticles(true);
     }
     setWireError(null);
 
@@ -504,18 +512,60 @@ export default function YourTimesDashboard({
           }
         }
         setLiveStories(combined);
+      } else if (json.articles && json.articles.length === 0) {
+        // Explicit empty response: show editorial empty state, not skeletons
+        setLiveStories([]);
       }
     } catch (err) {
       console.warn("Could not load live articles:", err);
-      if (liveStories.length === 0) {
-        setWireError("Telegraph transmission failed to receive incoming dispatches.");
-      }
+      setWireError("Telegraph transmission failed to receive incoming dispatches.");
     } finally {
-      setIsSyncingWire(false);
+      if (isBackground) {
+        setIsSyncingWire(false);
+      } else {
+        setIsLoadingArticles(false);
+      }
     }
   };
 
-  // Automatic background wire synchronization (on mount and every 60s)
+  // Initial load of live articles
+  useEffect(() => {
+    loadLiveArticles(false);
+  }, []);
+
+  // Fetch archival edition if selectedDate changes
+  useEffect(() => {
+    if (!selectedDate || selectedDate === "latest") return;
+    let isMounted = true;
+    const fetchArchiveDate = async () => {
+      setIsLoadingArticles(true);
+      setWireError(null);
+      try {
+        const res = await fetch(`/api/editions/${selectedDate}`, { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.success && json.data?.articles) {
+            if (json.data.articles.length > 0) {
+              const mapped = json.data.articles.map(mapApiArticle);
+              setLiveStories(mapped);
+            } else {
+              setLiveStories([]);
+            }
+          }
+        }
+      } catch (e) {
+        if (isMounted) setWireError(`Archive wire failed for date ${selectedDate}`);
+      } finally {
+        if (isMounted) setIsLoadingArticles(false);
+      }
+    };
+    fetchArchiveDate();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedDate]);
+
+  // Automatic background wire synchronization (every 60s without full-page loader)
   useEffect(() => {
     let isMounted = true;
     const autoSyncWire = async () => {
@@ -531,13 +581,19 @@ export default function YourTimesDashboard({
       } catch (e) {}
     };
 
-    autoSyncWire();
     const interval = setInterval(autoSyncWire, 60000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
   }, []);
+
+  // Video stories pool for Telegraphic Video Wire (16:9 aspect ratio)
+  const videoStories = useMemo(() => {
+    const list = (liveStories || []).filter((s) => s.video || s.videoType);
+    if (list.length > 0) return list;
+    return (liveStories || []).slice(0, 3);
+  }, [liveStories]);
 
   // Category pills for the "YOUR TIMES" tab
   const categoryPills = ["All", "AI", "Web", "Startups", "Security", "Design", "Gaming"];
@@ -1619,7 +1675,9 @@ export default function YourTimesDashboard({
                   </div>
                 </div>
 
-                {wireError ? (
+                {isLoadingArticles ? (
+                  <ArticleCardSkeleton count={6} />
+                ) : wireError ? (
                   <div className="bg-[#FAF7F0] border-2 border-dashed border-[#9F3028]/30 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-3">
                     <Radio className="w-8 h-8 text-[#9F3028]/60" />
                     <h4 className="font-serif font-bold text-lg text-[#201E19]">Telegraph Wire Interrupted</h4>
@@ -1914,6 +1972,87 @@ export default function YourTimesDashboard({
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </section>
+
+              {/* ── Section: Telegraphic Video Wire (16:9 Aspect Ratio YouTube Style) ── */}
+              <section className="flex flex-col gap-3.5 pt-2">
+                <div className="flex items-center justify-between border-b border-[#766E5F]/15 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-[#201E19] text-[#E8DFC8] text-[10px] font-bold font-mono px-2 py-0.5 rounded-sm tracking-wider flex items-center gap-1 shadow-xs">
+                      <Play className="w-2.5 h-2.5 fill-[#9F3028] text-[#9F3028]" />
+                      <span>VIDEO WIRE</span>
+                    </div>
+                    <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#201E19]">
+                      Telegraphic Video Dispatches
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-mono text-[#777777] uppercase tracking-wider hidden sm:inline">
+                    16:9 Broadsheet Reel
+                  </span>
+                </div>
+
+                {isLoadingArticles ? (
+                  <VideoCardSkeleton count={3} />
+                ) : videoStories.length === 0 ? (
+                  <div className="bg-[#FAF7F0] border border-dashed border-[#766E5F]/20 rounded-xl p-6 text-center text-xs font-mono text-[#666666]">
+                    No video transmissions indexed for this edition.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {videoStories.slice(0, 3).map((story) => (
+                      <article
+                        key={story.id}
+                        onClick={() => handleArticleClick(story)}
+                        className="group bg-[#EFE8D5] border border-[#766E5F]/20 hover:border-[#9F3028] rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer flex flex-col relative"
+                      >
+                        {/* 16:9 Aspect Ratio Video Thumbnail */}
+                        <div className="relative aspect-video w-full overflow-hidden bg-[#DFD5BC]">
+                          <Image
+                            src={story.urlToImage || story.image || "/window.svg"}
+                            alt={story.headline}
+                            fill
+                            unoptimized
+                            className="object-cover group-hover:scale-105 transition-transform duration-500"
+                            onError={(e) => {
+                              e.currentTarget.srcset = "";
+                              e.currentTarget.src = "/window.svg";
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/35 transition-colors flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full bg-[#201E19]/80 border border-white/30 flex items-center justify-center text-[#E8DFC8] group-hover:scale-110 group-hover:bg-[#9F3028] transition-all shadow-md">
+                              <Play className="w-4 h-4 fill-current ml-0.5" />
+                            </div>
+                          </div>
+                          <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-xs bg-black/80 text-white text-[10px] font-mono font-bold">
+                            {story.readTime?.includes("MIN") ? story.readTime.replace("READ", "").trim() : "4:15"}
+                          </div>
+                        </div>
+
+                        {/* YouTube Pattern Content Zone */}
+                        <div className="p-3.5 flex-1 flex flex-col justify-between">
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-full bg-[#201E19] text-[#E8DFC8] flex items-center justify-center font-mono text-xs font-bold shrink-0 border border-[#766E5F]/30">
+                              {getInitials(story.author || "Digital Times")}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-serif font-bold text-base text-[#201E19] leading-snug line-clamp-2 group-hover:text-[#9F3028] transition-colors">
+                                {story.headline}
+                              </h4>
+                              <div className="mt-1.5 text-[11px] font-mono text-[#666666]">
+                                <span>{story.author || "THE DIGITAL TIMES WIRE"}</span>
+                              </div>
+                              <div className="text-[10px] font-mono text-[#777777] flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[#9F3028] font-bold">{story.desk}</span>
+                                <span>•</span>
+                                <span>{story.date || "TODAY"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 )}
               </section>

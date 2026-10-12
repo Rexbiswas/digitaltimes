@@ -19,6 +19,14 @@ const UserSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+    resetCode: {
+      type: String,
+      select: false,
+    },
+    resetCodeExpires: {
+      type: Date,
+      select: false,
+    },
     role: {
       type: String,
       enum: ["reader", "editor", "admin"],

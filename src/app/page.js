@@ -33,6 +33,8 @@ import YourTimesDashboard from "@/components/YourTimesDashboard";
 import EditorialAuthScreen from "@/components/EditorialAuthScreen";
 import EditorialToaster from "@/components/EditorialToaster";
 import { ToastProvider, useToast } from "@/context/ToastContext";
+import EditionSkeleton from "@/components/skeletons/EditionSkeleton";
+import { sanitizeArticle } from "@/utils/articlePresenter";
 
 import { allArticles, leadStory } from "@/data/newspaperData";
 
@@ -70,11 +72,12 @@ function EditorialBroadsheetMain() {
         if (res.ok) {
           const json = await res.json();
           if (json.articles && json.articles.length > 0) {
-            setLiveArticles(json.articles);
+            const cleanArticles = json.articles.map(sanitizeArticle);
+            setLiveArticles(cleanArticles);
             if (json.leadStory) {
-              setLiveLeadStory(json.leadStory);
+              setLiveLeadStory(sanitizeArticle(json.leadStory));
             }
-            const headlines = json.articles.slice(0, 10).map((a) => (a.headline || a.title).toUpperCase());
+            const headlines = cleanArticles.slice(0, 10).map((a) => (a.headline || a.title).toUpperCase());
             if (headlines.length > 0) {
               setLiveHeadlines(headlines);
             }
@@ -421,12 +424,7 @@ function EditorialBroadsheetMain() {
       <EditorialCursor />
 
       {!isAuthLoaded ? (
-        <div className="min-h-screen w-full bg-[#E8DFC8] text-[#201E19] flex items-center justify-center font-mono text-xs">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#9F3028] animate-ping" />
-            <span>LOADING THE DIGITAL TIMES...</span>
-          </div>
-        </div>
+        <EditionSkeleton />
       ) : !currentUser && viewMode !== "broadsheet" ? (
         <EditorialAuthScreen
           onLogin={handleUserLogin}

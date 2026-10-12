@@ -13,4 +13,11 @@ module.exports = {
   JWT_SECRET: process.env.JWT_SECRET || "digitaltimes_jwt_secret_dev_key_2026",
   AUTO_SEED_FALLBACK: process.env.AUTO_SEED_FALLBACK !== "false",
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || "",
+  // Email / SMTP settings
+  SMTP_HOST: process.env.SMTP_HOST || "",
+  SMTP_PORT: parseInt(process.env.SMTP_PORT, 10) || 587,
+  SMTP_SECURE: process.env.SMTP_SECURE === "true",
+  EMAIL_USER: process.env.EMAIL_USER || process.env.SMTP_USER || "",
+  EMAIL_PASS: process.env.EMAIL_PASS || process.env.SMTP_PASS || "",
+  EMAIL_FROM: process.env.EMAIL_FROM || '"The Digital Times" <no-reply@digitaltimes.com>',
 };

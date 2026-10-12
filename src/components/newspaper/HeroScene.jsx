@@ -2,9 +2,15 @@
 
 import { leadStory } from "@/data/newspaperData";
 import { Clock, ArrowRight } from "lucide-react";
+import { cleanEditorialText } from "@/utils/articlePresenter";
 
 export default function HeroScene({ onOpenStory, story }) {
-  const currentStory = story || leadStory;
+  const rawStory = story || leadStory;
+  const currentStory = {
+    ...rawStory,
+    deck: cleanEditorialText(rawStory.deck, rawStory.headline),
+    leadParagraph: cleanEditorialText(rawStory.leadParagraph, rawStory.headline),
+  };
 
   return (
     <section

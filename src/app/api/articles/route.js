@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { allArticles, leadStory } from "@/data/newspaperData";
+import { sanitizeArticle } from "@/utils/articlePresenter";
 
 const BACKEND_API_URL =
   process.env.BACKEND_API_URL || "http://localhost:5000/api";
@@ -28,12 +29,13 @@ export async function GET(request) {
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        const cleanArticles = data.data.map(sanitizeArticle);
         return NextResponse.json({
           status: "ok",
           source: "backend-live",
-          total: data.data.length,
-          articles: data.data,
-          leadStory: data.data[0] || leadStory,
+          total: cleanArticles.length,
+          articles: cleanArticles,
+          leadStory: cleanArticles[0] || leadStory,
           timestamp: new Date().toISOString(),
         });
       }

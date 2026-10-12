@@ -7,6 +7,7 @@ import NavigationStrip from "@/components/NavigationStrip";
 import NewspaperFooter from "@/components/NewspaperFooter";
 import { allArticles, leadStory } from "@/data/newspaperData";
 import { ArrowLeft, Volume2, Bookmark, Share2, Play, Pause, Check } from "lucide-react";
+import { cleanEditorialText } from "@/utils/articlePresenter";
 
 export default function ArticlePage({ params }) {
   const resolvedParams = use(params);
@@ -67,7 +68,7 @@ export default function ArticlePage({ params }) {
           </h1>
 
           <p className="font-serif text-lg sm:text-2xl text-[#39352D] leading-relaxed max-w-3xl mx-auto mb-6">
-            {article.deck}
+            {cleanEditorialText(article.deck, article.headline)}
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-mono text-[#39352D] uppercase tracking-wider pt-3 border-t border-[#766E5F]/30">
