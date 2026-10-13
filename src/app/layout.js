@@ -1,4 +1,5 @@
 import { Playfair_Display, Newsreader, Inter, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -42,6 +43,7 @@ export default function RootLayout({ children }) {
       className={`${playfair.variable} ${newsreader.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#E8DFC8] text-[#201E19] selection:bg-[#201E19] selection:text-[#E8DFC8]">
+        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
         {children}
       </body>
     </html>

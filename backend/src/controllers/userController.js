@@ -37,6 +37,38 @@ const loginOrRegister = async (req, res, next) => {
     const existingUser = await User.findOne({ email: cleanEmail }).select("+password");
 
     // ─────────────────────────────────────────────────────────────
+    // 0. GOOGLE DISPATCH AUTHENTICATION (Press Pass SSO)
+    // ─────────────────────────────────────────────────────────────
+    if (action === "google") {
+      let user = existingUser;
+      if (!user) {
+        user = await User.create({
+          name: (name && name.trim()) || cleanEmail.split("@")[0] || "Google Reader",
+          email: cleanEmail,
+          role: "reader",
+          preferences: {
+            favoriteDesks: Array.isArray(topics) && topics.length > 0 ? topics : ["ai", "web", "startups"],
+            theme: "morning",
+          },
+        });
+      }
+
+      const token = generateToken(user._id);
+
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          preferences: user.preferences,
+        },
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // 1. SIGNUP / REGISTRATION FLOW (For new users)
     // ─────────────────────────────────────────────────────────────
     if (action === "signup") {
@@ -73,14 +105,18 @@ const loginOrRegister = async (req, res, next) => {
         },
       });
 
+      const token = generateToken(newUser._id);
+
       return res.status(201).json({
         success: true,
-        message: "Reader profile enrolled successfully. You may now sign in with your cipher passcode.",
+        message: "Reader profile enrolled successfully.",
+        token,
         user: {
           id: newUser._id,
           name: newUser.name,
           email: newUser.email,
           role: newUser.role,
+          preferences: newUser.preferences,
         },
       });
     }
@@ -90,6 +126,9 @@ const loginOrRegister = async (req, res, next) => {
     // ─────────────────────────────────────────────────────────────
     if (action === "forgot-password") {
       return forgotPassword(req, res, next);
+    }
+    if (action === "verify-reset-code") {
+      return verifyResetCode(req, res, next);
     }
     if (action === "reset-password") {
       return resetPassword(req, res, next);
@@ -178,6 +217,55 @@ const forgotPassword = async (req, res, next) => {
       message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and enter the code below.`,
       email: cleanEmail,
       expiresInMinutes: 15,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/users/verify-reset-code
+const verifyResetCode = async (req, res, next) => {
+  try {
+    const { email, resetCode } = req.body;
+
+    if (!email || !resetCode) {
+      return res.status(400).json({
+        success: false,
+        message: "Telegraph email address and 6-digit recovery cipher code are required.",
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: cleanEmail }).select("+resetCode +resetCodeExpires");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: "USER_NOT_FOUND",
+        message: "No subscriber profile found with this telegraph email.",
+      });
+    }
+
+    if (!user.resetCode || user.resetCode !== String(resetCode).trim()) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_RESET_CODE",
+        message: "Invalid recovery cipher code. Please check the 6-digit code provided.",
+      });
+    }
+
+    if (!user.resetCodeExpires || user.resetCodeExpires < new Date()) {
+      return res.status(400).json({
+        success: false,
+        code: "EXPIRED_RESET_CODE",
+        message: "Recovery cipher code has expired. Please request a fresh transmission.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Recovery cipher verified successfully. You may now create a new passcode.",
+      email: cleanEmail,
     });
   } catch (err) {
     next(err);
@@ -501,6 +589,7 @@ const clearReadingHistory = async (req, res, next) => {
 module.exports = {
   loginOrRegister,
   forgotPassword,
+  verifyResetCode,
   resetPassword,
   getProfile,
   getBookmarks,

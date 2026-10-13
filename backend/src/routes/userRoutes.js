@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   loginOrRegister,
   forgotPassword,
+  verifyResetCode,
   resetPassword,
   getProfile,
   getBookmarks,
@@ -24,6 +25,7 @@ const { requireAuth } = require("../middleware/auth");
 
 router.post("/auth", loginOrRegister);
 router.post("/forgot-password", forgotPassword);
+router.post("/verify-reset-code", verifyResetCode);
 router.post("/reset-password", resetPassword);
 router.get("/profile", requireAuth, getProfile);
 

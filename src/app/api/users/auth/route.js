@@ -79,6 +79,37 @@ export async function POST(request) {
     const cleanEmail = email.trim().toLowerCase();
 
     // ─────────────────────────────────────────────────────────────
+    // FALLBACK 0. GOOGLE DISPATCH FLOW (Press Pass SSO)
+    // ─────────────────────────────────────────────────────────────
+    if (action === "google") {
+      let targetUser = mockUsersDb.get(cleanEmail);
+      if (!targetUser) {
+        targetUser = {
+          id: "usr-google-" + Math.random().toString(36).substring(2, 9),
+          name: name?.trim() || cleanEmail.split("@")[0] || "Google Reader",
+          email: cleanEmail,
+          role: "Pro Reader",
+          preferences: {
+            topics: topics || ["AI", "Web Development", "Startups"],
+            theme: "morning",
+          },
+        };
+        mockUsersDb.set(cleanEmail, targetUser);
+      }
+      return NextResponse.json({
+        success: true,
+        token: "times_mock_google_jwt_token",
+        user: {
+          id: targetUser.id,
+          name: targetUser.name,
+          email: targetUser.email,
+          role: targetUser.role || "Pro Reader",
+          preferences: targetUser.preferences,
+        },
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // FALLBACK 1. SIGNUP FLOW (For new users)
     // ─────────────────────────────────────────────────────────────
     if (action === "signup") {
@@ -133,12 +164,14 @@ export async function POST(request) {
       return NextResponse.json(
         {
           success: true,
-          message: "Reader profile enrolled successfully. You may now sign in with your cipher passcode.",
+          message: "Reader profile enrolled successfully.",
+          token: "times_mock_jwt_token_local",
           user: {
             id: newMockUser.id,
             name: newMockUser.name,
             email: newMockUser.email,
             role: newMockUser.role,
+            preferences: newMockUser.preferences,
           },
         },
         { status: 201 }
@@ -150,14 +183,18 @@ export async function POST(request) {
     // ─────────────────────────────────────────────────────────────
     if (action === "forgot-password") {
       if (!mockUsersDb.has(cleanEmail)) {
-        return NextResponse.json(
-          {
-            success: false,
-            code: "USER_NOT_FOUND",
-            message: "No subscriber profile found with this telegraph email. Please check your address or sign up.",
+        // In local mock mode, allow testing with any valid email
+        mockUsersDb.set(cleanEmail, {
+          id: "usr-" + Math.random().toString(36).substring(2, 9),
+          name: cleanEmail.split("@")[0] || "Reader",
+          email: cleanEmail,
+          password: "Password123!",
+          role: "reader",
+          preferences: {
+            topics: ["AI", "Web Development", "Startups"],
+            theme: "morning",
           },
-          { status: 404 }
-        );
+        });
       }
       const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
       const existingUser = mockUsersDb.get(cleanEmail);
@@ -165,9 +202,63 @@ export async function POST(request) {
       existingUser.resetCodeExpires = Date.now() + 15 * 60 * 1000;
       return NextResponse.json({
         success: true,
-        message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and enter the code below.`,
+        message: `A 6-digit verification code has been dispatched to ${cleanEmail}. (Verification Code: ${resetCode})`,
         email: cleanEmail,
+        code: resetCode,
         expiresInMinutes: 15,
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FALLBACK 2.5. VERIFY RESET CODE FLOW
+    // ─────────────────────────────────────────────────────────────
+    if (action === "verify-reset-code") {
+      const { resetCode } = body || {};
+      if (!resetCode || String(resetCode).trim().length !== 6) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "INVALID_CODE_FORMAT",
+            message: "A 6-digit recovery cipher code is required.",
+          },
+          { status: 400 }
+        );
+      }
+      if (!mockUsersDb.has(cleanEmail)) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "USER_NOT_FOUND",
+            message: "No subscriber profile found with this telegraph email.",
+          },
+          { status: 404 }
+        );
+      }
+      const existingUser = mockUsersDb.get(cleanEmail);
+      if (!existingUser.resetCode || existingUser.resetCode !== String(resetCode).trim()) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "INVALID_RESET_CODE",
+            message: "Invalid recovery cipher code. Please check the 6-digit code provided.",
+          },
+          { status: 400 }
+        );
+      }
+      if (existingUser.resetCodeExpires && existingUser.resetCodeExpires < Date.now()) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "EXPIRED_RESET_CODE",
+            message: "Recovery cipher code has expired. Please request a fresh transmission.",
+          },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        message: "Recovery cipher code verified successfully. You may now create a new passcode.",
+        email: cleanEmail,
       });
     }
 
