@@ -1007,11 +1007,11 @@ export default function EditorialAuthScreen({
       {/* ─────────────────────────────────────────────────────────────
           RIGHT COLUMN: FULL-HEIGHT AUTHENTICATION CONSOLE (Responsive)
          ───────────────────────────────────────────────────────────── */}
-      <div className="w-full lg:w-1/2 xl:w-1/2 2xl:w-5/12 min-h-screen lg:min-h-0 lg:h-full lg:overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-3 xl:p-5 bg-[#EFE8D5] flex flex-col justify-center items-center">
-        <div className="w-full max-w-sm sm:max-w-md mx-auto my-auto py-1">
+      <div className="w-full lg:w-1/2 xl:w-1/2 2xl:w-5/12 min-h-screen lg:min-h-0 lg:h-full lg:overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 lg:p-3 xl:p-5 bg-[#EFE8D5] flex flex-col justify-start lg:justify-center items-center py-2 sm:py-4 lg:py-0">
+        <div className="w-full max-w-sm sm:max-w-md mx-auto my-0 lg:my-auto py-1">
           {/* Mobile & Tablet Portrait Masthead (Visible only on < lg) */}
-          <div className="lg:hidden w-full text-center pb-1.5 shrink-0">
-            <div className="flex items-center justify-between text-[10px] font-mono tracking-wider text-[#39352D] pb-0.5 border-b border-[#766E5F]/20">
+          <div className="lg:hidden w-full text-center pb-1 sm:pb-1.5 shrink-0">
+            <div className="flex items-center justify-between text-[9.5px] sm:text-[10px] font-mono tracking-wider text-[#39352D] pb-0.5 border-b border-[#766E5F]/20">
               <span className="font-bold text-[#201E19]">EDITION Nº 001</span>
               <div className="flex items-center gap-1.5">
                 <span className="relative flex h-2 w-2">
@@ -1032,7 +1032,7 @@ export default function EditorialAuthScreen({
           </div>
 
           {/* Central Auth Docket Card */}
-          <div className="border-2 border-[#766E5F] bg-[#EFE8D5] p-3 sm:p-3.5 shadow-[3px_3px_0px_#766E5F] relative">
+          <div className="border-2 border-[#766E5F] bg-[#EFE8D5] p-2.5 sm:p-3.5 shadow-[2px_2px_0px_#766E5F] sm:shadow-[3px_3px_0px_#766E5F] relative">
             {/* Broadsheet Docket Folio Header */}
             <div className="flex items-center justify-between pb-1 sm:pb-1.5 mb-2 sm:mb-2.5 border-b-2 border-[#766E5F] text-[8.5px] sm:text-[9px] font-mono tracking-widest uppercase">
               <div className="flex items-center gap-1.5 font-bold text-[#201E19]">
@@ -1708,8 +1708,8 @@ export default function EditorialAuthScreen({
                   </button>
                 </div>
 
-                {/* Broadsheet Rule Divider */}
-                <div className="relative my-1.5 flex items-center justify-center">
+                {/* Broadsheet Rule Divider (Hidden on mobile) */}
+                <div className="hidden sm:flex relative my-1.5 items-center justify-center">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-[#766E5F]/30" />
                   </div>
@@ -1720,8 +1720,8 @@ export default function EditorialAuthScreen({
                   </div>
                 </div>
 
-                {/* Google Sign Up Button */}
-                <div>
+                {/* Google Sign Up Button (Hidden on mobile) */}
+                <div className="hidden sm:block">
                   <button
                     type="button"
                     onClick={handleGoogleClick}
