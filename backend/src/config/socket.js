@@ -1,4 +1,5 @@
 const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
 const env = require("./env");
 
 let io = null;
@@ -16,24 +17,68 @@ const initSocket = (httpServer) => {
     },
   });
 
+  // Server-side Authentication Handshake Middleware
+  io.use((socket, next) => {
+    try {
+      const token =
+        socket.handshake.auth?.token ||
+        (socket.handshake.headers?.authorization &&
+          socket.handshake.headers.authorization.split(" ")[1]);
+
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, env.JWT_SECRET);
+          socket.userId = decoded.id ? decoded.id.toString() : null;
+        } catch (tokenErr) {
+          // Token expired or invalid: continue as unauthenticated guest reader
+          socket.userId = null;
+        }
+      } else {
+        socket.userId = null;
+      }
+      next();
+    } catch (err) {
+      next();
+    }
+  });
+
   io.on("connection", (socket) => {
-    console.log(`[Socket] Client connected: ${socket.id}`);
+    console.log(`[Socket] Client connected: ${socket.id} (User: ${socket.userId || "Guest"})`);
 
-    // Allow clients to join edition rooms (e.g., 'edition:2026-10-07')
+    // Automatically join authorized user room if token was validated
+    if (socket.userId) {
+      const userRoom = `user:${socket.userId}`;
+      socket.join(userRoom);
+      console.log(`[Socket] Authorized user joined private room: ${userRoom}`);
+    }
+
+    // Explicit room authorization for user subscriptions
+    socket.on("join:user", (requestedUserId) => {
+      if (socket.userId && socket.userId === requestedUserId) {
+        socket.join(`user:${requestedUserId}`);
+        console.log(`[Socket] ${socket.id} confirmed authorized user room: user:${requestedUserId}`);
+      } else {
+        console.warn(`[Socket] Unauthorized room join attempt rejected for ${socket.id} -> user:${requestedUserId}`);
+      }
+    });
+
+    // Public room subscriptions
     socket.on("join:edition", (editionDate) => {
-      const room = `edition:${editionDate}`;
-      socket.join(room);
-      console.log(`[Socket] ${socket.id} joined room: ${room}`);
+      if (editionDate && typeof editionDate === "string") {
+        const room = `edition:${editionDate}`;
+        socket.join(room);
+        console.log(`[Socket] ${socket.id} joined room: ${room}`);
+      }
     });
 
-    // Allow clients to join specific desk rooms (e.g., 'desk:ai')
     socket.on("join:desk", (deskName) => {
-      const room = `desk:${deskName.toLowerCase()}`;
-      socket.join(room);
-      console.log(`[Socket] ${socket.id} joined room: ${room}`);
+      if (deskName && typeof deskName === "string") {
+        const room = `desk:${deskName.toLowerCase()}`;
+        socket.join(room);
+        console.log(`[Socket] ${socket.id} joined room: ${room}`);
+      }
     });
 
-    // Allow clients to join breaking news room
     socket.on("join:breaking", () => {
       socket.join("breaking-news");
       console.log(`[Socket] ${socket.id} joined room: breaking-news`);
@@ -51,39 +96,87 @@ const getIO = () => {
   return io;
 };
 
-// Emitters for new articles and breaking dispatches
+// Documented, versioned event payload builder
+const createEventPayload = (eventType, data) => ({
+  version: "1.0",
+  event: eventType,
+  timestamp: new Date().toISOString(),
+  data,
+});
+
+// Emitters
 const emitNewArticle = (article) => {
   if (!io) return;
 
-  // Broadcast to global edition room
+  const payload = createEventPayload("NEW_ARTICLE", article);
+
+  // Broadcast to edition room
   if (article.editionDate) {
-    io.to(`edition:${article.editionDate}`).emit("NEW_ARTICLE", article);
+    io.to(`edition:${article.editionDate}`).emit("NEW_ARTICLE", payload);
   }
 
-  // Broadcast to desk-specific room
+  // Broadcast to desk room
   if (article.desk) {
-    io.to(`desk:${article.desk.toLowerCase()}`).emit("NEW_ARTICLE", article);
+    io.to(`desk:${article.desk.toLowerCase()}`).emit("NEW_ARTICLE", payload);
   }
 
-  // Global dispatch for newsroom toast
-  io.emit("NEW_DISPATCH", article);
+  // Broadcast to all active newsroom readers for toast updates
+  io.emit("NEW_ARTICLE", payload);
+  io.emit("NEW_DISPATCH", article); // Legacy compatibility
 
-  // If breaking, broadcast to breaking-news room and global
+  // If breaking news, emit to breaking channel
   if (article.breaking) {
-    io.to("breaking-news").emit("BREAKING_NEWS", article);
-    io.emit("BREAKING_NEWS", article);
+    const breakingPayload = createEventPayload("BREAKING_NEWS", article);
+    io.to("breaking-news").emit("BREAKING_NEWS", breakingPayload);
+    io.emit("BREAKING_NEWS", breakingPayload);
   }
 };
 
 const emitBreakingNews = (article) => {
   if (!io) return;
-  io.emit("BREAKING_NEWS", article);
+  const payload = createEventPayload("BREAKING_NEWS", article);
+  io.to("breaking-news").emit("BREAKING_NEWS", payload);
+  io.emit("BREAKING_NEWS", payload);
+};
+
+const emitEditionUpdated = (edition) => {
+  if (!io) return;
+  const payload = createEventPayload("EDITION_UPDATED", edition);
+  if (edition.date) {
+    io.to(`edition:${edition.date}`).emit("EDITION_UPDATED", payload);
+  }
+  io.emit("EDITION_UPDATED", payload);
 };
 
 const emitNotification = (notification) => {
   if (!io) return;
-  io.emit("NOTIFICATION", notification);
-  io.emit("notification:new", notification);
+
+  const payload = createEventPayload("NEW_NOTIFICATION", notification);
+
+  if (notification.user) {
+    // Deliver to authenticated user's private room
+    const targetRoom = `user:${notification.user.toString()}`;
+    io.to(targetRoom).emit("NEW_NOTIFICATION", payload);
+    io.to(targetRoom).emit("notification:new", notification);
+    io.to(targetRoom).emit("NOTIFICATION", notification);
+  } else {
+    // Global broadcast notification
+    io.emit("NEW_NOTIFICATION", payload);
+    io.emit("notification:new", notification);
+    io.emit("NOTIFICATION", notification);
+  }
+};
+
+const emitFollowUpdated = (userId, followData) => {
+  if (!io || !userId) return;
+  const payload = createEventPayload("FOLLOW_UPDATED", followData);
+  io.to(`user:${userId.toString()}`).emit("FOLLOW_UPDATED", payload);
+};
+
+const emitNewVideo = (videoData) => {
+  if (!io) return;
+  const payload = createEventPayload("NEW_VIDEO", videoData);
+  io.emit("NEW_VIDEO", payload);
 };
 
 module.exports = {
@@ -91,5 +184,8 @@ module.exports = {
   getIO,
   emitNewArticle,
   emitBreakingNews,
+  emitEditionUpdated,
   emitNotification,
+  emitFollowUpdated,
+  emitNewVideo,
 };

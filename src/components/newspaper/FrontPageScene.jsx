@@ -41,9 +41,6 @@ export default function FrontPageScene({
             <span className="font-serif font-black text-lg tracking-wider uppercase">
               SECTION 1: DISPATCHES FROM THE FRONT
             </span>
-            <span className="bg-[#201E19] text-[#E8DFC8] text-[10px] px-1.5 py-0.2 uppercase font-mono">
-              THE BROADSHEET
-            </span>
           </div>
           <div className="hidden sm:flex items-center gap-4 text-[#39352D]">
             <span>FOLIO NO. 01</span>

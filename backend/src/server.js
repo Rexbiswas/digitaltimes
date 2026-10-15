@@ -16,16 +16,25 @@ const searchRoutes = require("./routes/searchRoutes");
 const userRoutes = require("./routes/userRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const followRoutes = require("./routes/followRoutes");
+const feedRoutes = require("./routes/feedRoutes");
+const verificationRoutes = require("./routes/verificationRoutes");
 
 // Controllers for root endpoints
 const {
   getTrendingArticles,
   getLiveDispatches,
 } = require("./controllers/articleController");
+const {
+  getJournalists,
+  getJournalistFollowers,
+  getDeskFollowers,
+} = require("./controllers/followController");
 
 // Broadsheet Scheduler & Seeding
 const { startCronScheduler } = require("./services/scheduler/scheduler");
 const { seedInitialData } = require("./utils/seedData");
+const { ensureOfficialAccount } = require("./services/officialAccount");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -91,6 +100,14 @@ app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 
+// Social, Feed & Profile Verification Routers
+app.get("/api/journalists", getJournalists);
+app.get("/api/journalists/:id/followers", getJournalistFollowers);
+app.get("/api/desks/:id/followers", getDeskFollowers);
+app.use("/api/follows", followRoutes);
+app.use("/api/feed", feedRoutes);
+app.use("/api/verification", verificationRoutes);
+
 // Centralized 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -111,8 +128,8 @@ const startServer = async () => {
       await seedInitialData();
     }
 
-    // Start background ingestion, midnight broadsheet rollover, and trending scheduler
     if (dbOk) {
+      await ensureOfficialAccount();
       startCronScheduler();
     }
 

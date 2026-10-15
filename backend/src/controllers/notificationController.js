@@ -39,6 +39,27 @@ const getNotifications = async (req, res, next) => {
   }
 };
 
+// GET /api/notifications/unread-count
+const getUnreadCount = async (req, res, next) => {
+  try {
+    const userId = req.user ? req.user._id : null;
+    const query = { read: false };
+    if (userId) {
+      query.$or = [{ user: userId }, { user: null }];
+    } else {
+      query.user = null;
+    }
+
+    const unreadCount = await Notification.countDocuments(query);
+    res.json({
+      success: true,
+      unreadCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // POST /api/notifications or POST /api/users/notifications
 const createNotification = async (req, res, next) => {
   try {
@@ -162,6 +183,7 @@ const deleteNotification = async (req, res, next) => {
 
 module.exports = {
   getNotifications,
+  getUnreadCount,
   createNotification,
   markNotificationRead,
   markAllNotificationsRead,

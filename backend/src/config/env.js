@@ -11,7 +11,7 @@ module.exports = {
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:3000",
   NEWS_API_KEY: process.env.NEWS_API_KEY || "",
   JWT_SECRET: process.env.JWT_SECRET || "digitaltimes_jwt_secret_dev_key_2026",
-  AUTO_SEED_FALLBACK: process.env.AUTO_SEED_FALLBACK !== "false",
+  AUTO_SEED_FALLBACK: process.env.AUTO_SEED_FALLBACK === "true",
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || "",
   // Email / SMTP settings
   SMTP_HOST: process.env.SMTP_HOST || "",

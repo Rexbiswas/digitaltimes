@@ -368,7 +368,17 @@ function EditorialBroadsheetMain() {
   };
 
   const scrollToDesk = (deskId) => {
-    setActiveDesk(deskId);
+    setActiveDesk(deskId || "frontpage");
+    if (!deskId || deskId === "masthead" || deskId === "broadsheet" || deskId === "top") {
+      if (typeof window !== "undefined") {
+        if (window.__lenis) {
+          window.__lenis.scrollTo(0, { duration: 1.0 });
+        } else {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+      return;
+    }
     const element = document.getElementById(deskId);
     if (element) {
       if (typeof window !== "undefined" && window.__lenis) {
@@ -443,8 +453,10 @@ function EditorialBroadsheetMain() {
           clippings={clippings}
           onNavigateToBroadsheet={(deskId) => {
             setViewMode("broadsheet");
-            if (deskId) {
+            if (deskId && deskId !== "masthead" && deskId !== "broadsheet" && deskId !== "top") {
               setTimeout(() => scrollToDesk(deskId), 300);
+            } else {
+              setTimeout(() => scrollToDesk("masthead"), 150);
             }
           }}
           onOpenSearchModal={() => router.push("/search")}

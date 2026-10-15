@@ -6,6 +6,12 @@ const {
   verifyResetCode,
   resetPassword,
   getProfile,
+  discoverUsers,
+  getUserProfile,
+  getUserFollowers,
+  getUserFollowing,
+  updateProfile,
+  deleteUser,
   getBookmarks,
   addBookmark,
   removeBookmark,
@@ -27,7 +33,15 @@ router.post("/auth", loginOrRegister);
 router.post("/forgot-password", forgotPassword);
 router.post("/verify-reset-code", verifyResetCode);
 router.post("/reset-password", resetPassword);
+
+// User Discovery & Public Profiles
+router.get("/discover", discoverUsers);
 router.get("/profile", requireAuth, getProfile);
+router.patch("/profile", requireAuth, updateProfile);
+router.get("/profile/:usernameOrId", getUserProfile);
+router.get("/:id/followers", getUserFollowers);
+router.get("/:id/following", getUserFollowing);
+router.delete("/:id", requireAuth, deleteUser);
 
 // Bookmarks (Clippings)
 router.get("/bookmarks", requireAuth, getBookmarks);

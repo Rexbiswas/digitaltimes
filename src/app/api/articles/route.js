@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { allArticles, leadStory } from "@/data/newspaperData";
 import { sanitizeArticle } from "@/utils/articlePresenter";
 
 const BACKEND_API_URL =
@@ -10,7 +9,6 @@ export async function GET(request) {
   const desk = searchParams.get("desk");
   const query = searchParams.get("q");
 
-  // Attempt to fetch fresh articles from backend server
   try {
     const params = new URLSearchParams();
     if (desk) params.append("desk", desk);
@@ -28,48 +26,43 @@ export async function GET(request) {
 
     if (res.ok) {
       const data = await res.json();
-      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+      if (data.success && Array.isArray(data.data)) {
         const cleanArticles = data.data.map(sanitizeArticle);
         return NextResponse.json({
           status: "ok",
           source: "backend-live",
           total: cleanArticles.length,
           articles: cleanArticles,
-          leadStory: cleanArticles[0] || leadStory,
+          leadStory: cleanArticles[0] || null,
           timestamp: new Date().toISOString(),
         });
       }
     }
+
+    return NextResponse.json(
+      {
+        status: "empty",
+        source: "backend-live",
+        total: 0,
+        articles: [],
+        leadStory: null,
+        message: "No dispatches found in the active archive for this query.",
+        timestamp: new Date().toISOString(),
+      },
+      { status: 200 }
+    );
   } catch (err) {
-    // Fall back to local broadsheet catalog
-  }
-
-  // Fallback to static mock articles
-  let filtered = [...allArticles];
-
-  if (desk) {
-    filtered = filtered.filter(
-      (a) => a.desk?.toLowerCase() === desk.toLowerCase()
+    return NextResponse.json(
+      {
+        status: "error",
+        source: "backend-offline",
+        message: "Broadsheet backend archive is currently unavailable. Please check connection and retry.",
+        total: 0,
+        articles: [],
+        leadStory: null,
+        timestamp: new Date().toISOString(),
+      },
+      { status: 503 }
     );
   }
-
-  if (query) {
-    const q = query.toLowerCase();
-    filtered = filtered.filter(
-      (a) =>
-        a.headline?.toLowerCase().includes(q) ||
-        a.deck?.toLowerCase().includes(q) ||
-        a.author?.toLowerCase().includes(q)
-    );
-  }
-
-  return NextResponse.json({
-    status: "ok",
-    source: "static-fallback",
-    total: filtered.length,
-    articles: filtered,
-    leadStory: leadStory,
-    timestamp: new Date().toISOString(),
-  });
 }
-

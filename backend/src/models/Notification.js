@@ -18,7 +18,7 @@ const NotificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["breaking", "edition", "system", "desk", "history", "clipping"],
+      enum: ["breaking", "edition", "system", "desk", "history", "clipping", "author", "follow", "verification"],
       default: "breaking",
     },
     desk: {
@@ -44,6 +44,11 @@ const NotificationSchema = new mongoose.Schema(
     read: {
       type: Boolean,
       default: false,
+    },
+    idempotencyKey: {
+      type: String,
+      sparse: true,
+      index: true,
     },
   },
   {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { mastheadData, marketTickers } from "@/data/newspaperData";
-import { Bookmark, Search, Volume2, Sparkles, Sliders } from "lucide-react";
+import { Bookmark, Volume2, Sparkles, Sliders } from "lucide-react";
 
 export default function Masthead({
   onOpenDashboard,
@@ -67,7 +67,7 @@ export default function Masthead({
 
   return (
     <>
-      <div className="sticky top-0 z-40 w-full bg-[#E8DFC8]/98 backdrop-blur-md border-b border-[#766E5F] select-none shadow-xs">
+      <div id="masthead" className="sticky top-0 z-40 w-full bg-[#E8DFC8]/98 backdrop-blur-md border-b border-[#766E5F] select-none shadow-xs">
         <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-1.5 sm:py-2">
           <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono tracking-wider text-[#39352D] gap-2">
             {/* Left Ear: Weather & Edition (Responsive) */}
@@ -128,31 +128,21 @@ export default function Masthead({
               )}
               <span className="text-[#766E5F]/30">|</span>
 
-              {onOpenSearch && (
-                <>
-                  <button
-                    onClick={onOpenSearch}
-                    className="hover:text-[#9F3028] flex items-center gap-1 cursor-pointer transition-colors font-semibold"
-                    title="Search Archive Broadsheet"
-                    data-cursor="SEARCH"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Search</span>
-                  </button>
-                  <span className="text-[#766E5F]/30">|</span>
-                </>
-              )}
+              <span id="broadsheet-badge" className="bg-[#201E19] text-[#E8DFC8] text-[10px] px-1.5 py-0.5 uppercase font-mono tracking-wider font-semibold whitespace-nowrap select-none">
+                THE BROADSHEET
+              </span>
+              <span className="text-[#766E5F]/30">|</span>
 
               <button
                 onClick={onOpenClippings}
-                className="hover:text-[#201E19] flex items-center gap-1 cursor-pointer transition-colors relative"
-                title="View Saved Newspaper Clippings"
+                className="hover:text-[#9F3028] text-[#201E19] p-1 cursor-pointer transition-colors relative flex items-center justify-center rounded-sm"
+                title="Saved Articles (Clippings)"
+                aria-label={`Saved Articles (${clippingCount})`}
                 data-cursor="CLIPPINGS"
               >
-                <Bookmark className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Clippings</span>
+                <Bookmark className="w-4 h-4" />
                 {clippingCount > 0 && (
-                  <span className="bg-[#9F3028] text-[#E8DFC8] text-[9px] font-bold px-1 rounded-full">
+                  <span className="absolute -top-1 -right-1.5 bg-[#9F3028] text-[#E8DFC8] text-[9px] font-bold min-w-[15px] h-[15px] px-0.5 rounded-full flex items-center justify-center leading-none shadow-xs">
                     {clippingCount}
                   </span>
                 )}

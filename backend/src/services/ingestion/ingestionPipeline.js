@@ -14,7 +14,10 @@ const { assembleDailyEdition } = require("../edition/editionAssembler");
 const { seedFallbackArticles } = require("../seed/seedFallbackArticles");
 const Article = require("../../models/Article");
 const Edition = require("../../models/Edition");
-const { emitNewArticle } = require("../../config/socket");
+const Follow = require("../../models/Follow");
+const Notification = require("../../models/Notification");
+const { emitNewArticle, emitNotification } = require("../../config/socket");
+const env = require("../../config/env");
 
 /**
  * Attaches a newly saved article to the active edition for its date
@@ -173,6 +176,50 @@ const runIngestionPipeline = async ({ rebuildEdition = true } = {}) => {
       } catch (socketErr) {
         // Socket emission failure is non-fatal
       }
+
+      // Idempotently notify readers following this author or desk
+      try {
+        const cleanAuthor = (savedArticle.author || "").replace(/^By\s+/i, "").trim();
+        const deskSlug = (savedArticle.desk || "").toLowerCase().trim();
+
+        const followers = await Follow.find({
+          $or: [
+            { targetType: "journalist", targetId: cleanAuthor },
+            { targetType: "desk", targetId: deskSlug },
+          ],
+        }).lean();
+
+        for (const f of followers) {
+          const idempotencyKey = `${f.user.toString()}_${savedArticle._id.toString()}`;
+          const existingNotif = await Notification.findOne({ idempotencyKey });
+          if (!existingNotif) {
+            const notif = await Notification.create({
+              user: f.user,
+              title:
+                f.targetType === "journalist"
+                  ? `New Dispatch by ${cleanAuthor}`
+                  : `New Dispatch from ${savedArticle.desk.toUpperCase()} Desk`,
+              message: savedArticle.headline || savedArticle.title,
+              type: f.targetType === "journalist" ? "author" : "desk",
+              desk: (savedArticle.desk || "NEWSROOM").toUpperCase(),
+              time: "JUST NOW",
+              articleId: savedArticle._id,
+              articleCustomId: savedArticle.slug || savedArticle._id.toString(),
+              story: {
+                id: savedArticle.slug || savedArticle._id.toString(),
+                headline: savedArticle.headline || savedArticle.title,
+                desk: savedArticle.desk,
+                author: savedArticle.author,
+                readTime: savedArticle.readTime,
+              },
+              idempotencyKey,
+            });
+            emitNotification(notif);
+          }
+        }
+      } catch (notifErr) {
+        console.warn(`[IngestionPipeline] Follower notification dispatch warning: ${notifErr.message}`);
+      }
     } catch (saveErr) {
       if (saveErr.code === 11000) {
         duplicatesSkipped++;
@@ -182,11 +229,11 @@ const runIngestionPipeline = async ({ rebuildEdition = true } = {}) => {
     }
   }
 
-  // 4. Ensure broadsheet is never empty: if 0 articles saved and DB is barren, seed fallbacks
+  // 4. Fallback seeding: only if explicitly configured in environment
   const todayStr = new Date().toISOString().split("T")[0];
   const todayArticlesCount = await Article.countDocuments({ editionDate: todayStr });
 
-  if (todayArticlesCount < 5) {
+  if (todayArticlesCount < 5 && env.AUTO_SEED_FALLBACK) {
     console.log(
       `[IngestionPipeline] Active edition has only ${todayArticlesCount} articles. Triggering broadsheet fallback seeds...`
     );

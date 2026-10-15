@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X, Bookmark, Volume2, Pause, Play, Share2, ArrowRight, CornerDownRight, Check } from "lucide-react";
 import { cleanEditorialText } from "@/utils/articlePresenter";
+import VerifiedBadge from "./VerifiedBadge";
 
 export default function ArticleModal({ article, onClose, onSaveClipping, isSaved }) {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -100,7 +101,15 @@ export default function ArticleModal({ article, onClose, onSaveClipping, isSaved
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-mono text-[#39352D] uppercase tracking-wider pt-2 border-t border-[#766E5F]/30">
-              <span className="font-bold text-[#201E19]">{article.author || "By The Editorial Board"}</span>
+              <span className="font-bold text-[#201E19] inline-flex items-center gap-1.5">
+                <span>{article.author || "By The Editorial Board"}</span>
+                {article.verified && (
+                  <VerifiedBadge
+                    category={article.verificationCategory || "journalist"}
+                    size="sm"
+                  />
+                )}
+              </span>
               <span>•</span>
               <span>{article.date || "September 30, 2026"}</span>
               <span>•</span>

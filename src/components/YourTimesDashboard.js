@@ -34,11 +34,34 @@ import {
   Trash2,
   Play,
 } from "lucide-react";
-import { dashboardRecommendedStories, breakingHeadlines } from "@/data/newspaperData";
+import { breakingHeadlines } from "@/data/newspaperData";
 import CalendarDateSelector from "./CalendarDateSelector";
 import { ArticleCardSkeleton, VideoCardSkeleton, SkeletonBlock } from "./skeletons";
 import { useToast } from "@/context/ToastContext";
 import { cleanEditorialText } from "@/utils/articlePresenter";
+import VerifiedBadge from "./VerifiedBadge";
+import VerificationModal from "./VerificationModal";
+import UserProfileModal from "./UserProfileModal";
+import AccountProfileModal from "./AccountProfileModal";
+import {
+  fetchJournalistsApi,
+  fetchUserFollowsApi,
+  followTargetApi,
+  unfollowTargetApi,
+  discoverUsersApi,
+  fetchUserProfileApi,
+  fetchUserFollowersApi,
+  fetchUserFollowingApi,
+  deleteUserApi,
+  fetchPersonalizedFeedApi,
+  fetchNotificationsApi,
+  fetchUnreadCountApi,
+  markNotificationReadApi,
+  markAllNotificationsReadApi,
+  deleteNotificationApi,
+  fetchVerificationStatusApi,
+} from "@/services/api";
+import { initFrontendSocket, getFrontendSocket } from "@/services/socket";
 
 export default function YourTimesDashboard({
   user,
@@ -183,30 +206,28 @@ export default function YourTimesDashboard({
   // Reading history state
   const [readingHistory, setReadingHistory] = useState([]);
 
-  // Live Notifications simulation
-  const [liveNotifications, setLiveNotifications] = useState([
-    {
-      id: 1,
-      title: "Breaking: Autonomous reasoning model passes formal logic theorem proof",
-      time: "2 MIN AGO",
-      desk: "AI",
-      unread: true
-    },
-    {
-      id: 2,
-      title: "Market Alert: Global compute futures index advances +3.4%",
-      time: "18 MIN AGO",
-      desk: "BUSINESS",
-      unread: true
-    },
-    {
-      id: 3,
-      title: "Dispatch: New browser local inference specification ratified by W3C",
-      time: "45 MIN AGO",
-      desk: "WEB",
-      unread: false
-    }
-  ]);
+  // Persistent Real Notifications
+  const [liveNotifications, setLiveNotifications] = useState([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
+  // Real Social Following & Instagram-Style Discovery State
+  const [discoverUsers, setDiscoverUsers] = useState([]);
+  const [isLoadingDiscover, setIsLoadingDiscover] = useState(false);
+  const [socialSearchQuery, setSocialSearchQuery] = useState("");
+  const [userFollows, setUserFollows] = useState({ desks: [], journalists: [], users: [] });
+  const [userFollowersList, setUserFollowersList] = useState([]);
+  const [isLoadingFollowers, setIsLoadingFollowers] = useState(false);
+  const [isLoadingFollows, setIsLoadingFollows] = useState(false);
+  const [followingTabFilter, setFollowingTabFilter] = useState("discover"); // "discover" | "following" | "followers" | "desks"
+  const [selectedProfileUsername, setSelectedProfileUsername] = useState(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Press Verification State
+  const [isVerificationOpen, setIsVerificationOpen] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState(null);
+
+  // Real-time broadsheet wire updates counter
+  const [newDispatchesCount, setNewDispatchesCount] = useState(0);
 
   // Available topics for Customize modal
   const allAvailableInterests = [
@@ -281,31 +302,271 @@ export default function YourTimesDashboard({
     };
   }, []);
 
-  // Load live notifications from API
+  // ─────────────────────────────────────────────────────────────
+  // LOAD REAL DATA: NOTIFICATIONS, JOURNALISTS, FOLLOWS & VERIFICATION
+  // ─────────────────────────────────────────────────────────────
+  const loadNotifications = async () => {
+    try {
+      const res = await fetchNotificationsApi({ limit: 50 });
+      if (res && res.success && Array.isArray(res.data)) {
+        setLiveNotifications(res.data);
+        setUnreadNotificationsCount(res.unreadCount || res.data.filter((n) => !n.read).length);
+      }
+    } catch (e) {}
+  };
+
+  const loadDiscoverUsers = async (query = socialSearchQuery) => {
+    setIsLoadingDiscover(true);
+    try {
+      const res = await discoverUsersApi({ q: query, limit: 50 });
+      if (res && res.success && Array.isArray(res.data)) {
+        setDiscoverUsers(res.data);
+      }
+    } catch (e) {
+      console.error("Failed to load discover users:", e);
+    } finally {
+      setIsLoadingDiscover(false);
+    }
+  };
+
+  const loadUserFollows = async () => {
+    setIsLoadingFollows(true);
+    try {
+      const res = await fetchUserFollowsApi({ limit: 100 });
+      if (res && res.success) {
+        setUserFollows({
+          desks: Array.isArray(res.desks) ? res.desks : [],
+          journalists: Array.isArray(res.journalists) ? res.journalists : [],
+          users: Array.isArray(res.users) ? res.users : [],
+        });
+      }
+    } catch (e) {} finally {
+      setIsLoadingFollows(false);
+    }
+  };
+
+  const loadUserFollowers = async () => {
+    if (!user?.id && !user?._id) return;
+    setIsLoadingFollowers(true);
+    try {
+      const res = await fetchUserFollowersApi(user.id || user._id);
+      if (res && res.success && Array.isArray(res.data)) {
+        setUserFollowersList(res.data);
+      }
+    } catch (e) {} finally {
+      setIsLoadingFollowers(false);
+    }
+  };
+
+  const loadVerificationStatus = async () => {
+    try {
+      const res = await fetchVerificationStatusApi();
+      if (res && res.success) {
+        setVerificationStatus(res);
+      }
+    } catch (e) {}
+  };
+
+  // Debounced search for social discovery
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadDiscoverUsers(socialSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [socialSearchQuery]);
+
   useEffect(() => {
     let isMounted = true;
-    const fetchNotifications = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
-      try {
-        const res = await fetch("/api/notifications?limit=50", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res.ok) {
-          const json = await res.json();
-          if (isMounted && json.success && Array.isArray(json.data) && json.data.length > 0) {
-            setLiveNotifications(json.data);
-          }
-        }
-      } catch (err) {}
-    };
+    loadNotifications();
+    loadDiscoverUsers("");
+    loadUserFollows();
+    loadUserFollowers();
+    loadVerificationStatus();
 
-    fetchNotifications();
-    const timer = setInterval(fetchNotifications, 15000);
+    // ─────────────────────────────────────────────────────────────
+    // REAL-TIME SOCKET.IO CLIENT SUBSCRIPTIONS
+    // ─────────────────────────────────────────────────────────────
+    const socket = initFrontendSocket();
+
+    if (socket) {
+      const handleNewArticle = (payload) => {
+        if (!isMounted) return;
+        setNewDispatchesCount((prev) => prev + 1);
+      };
+
+      const handleNewNotification = (payload) => {
+        if (!isMounted) return;
+        const notif = payload?.data || payload;
+        if (notif) {
+          setLiveNotifications((prev) => [notif, ...prev]);
+          setUnreadNotificationsCount((prev) => prev + 1);
+          toast?.success?.("Broadsheet Alert", notif.title || "New editorial notification received.");
+        }
+      };
+
+      const handleFollowUpdated = (payload) => {
+        if (!isMounted) return;
+        loadUserFollows();
+        loadUserFollowers();
+        loadDiscoverUsers(socialSearchQuery);
+      };
+
+      socket.on("NEW_ARTICLE", handleNewArticle);
+      socket.on("NEW_NOTIFICATION", handleNewNotification);
+      socket.on("notification:new", handleNewNotification);
+      socket.on("FOLLOW_UPDATED", handleFollowUpdated);
+
+      return () => {
+        isMounted = false;
+        socket.off("NEW_ARTICLE", handleNewArticle);
+        socket.off("NEW_NOTIFICATION", handleNewNotification);
+        socket.off("notification:new", handleNewNotification);
+        socket.off("FOLLOW_UPDATED", handleFollowUpdated);
+      };
+    }
+
     return () => {
       isMounted = false;
-      clearInterval(timer);
     };
   }, []);
+
+  // Instagram-style user follow toggle handler
+  const handleToggleFollowUser = async (targetUser) => {
+    const targetUserId = targetUser.id || targetUser._id;
+    const isCurrentlyFollowing =
+      targetUser.isFollowing ||
+      userFollows.users?.some(
+        (f) =>
+          f.targetId === targetUserId ||
+          f.username?.toLowerCase() === targetUser.username?.toLowerCase()
+      );
+
+    // Optimistic UI updates
+    setDiscoverUsers((prev) =>
+      prev.map((u) => {
+        const uId = u.id || u._id;
+        if (uId === targetUserId || u.username === targetUser.username) {
+          const count = u.followerCount || 0;
+          return {
+            ...u,
+            isFollowing: !isCurrentlyFollowing,
+            followerCount: isCurrentlyFollowing ? Math.max(0, count - 1) : count + 1,
+          };
+        }
+        return u;
+      })
+    );
+
+    if (isCurrentlyFollowing) {
+      const res = await unfollowTargetApi(targetUserId, "user");
+      if (res && res.success) {
+        toast?.success?.("Unfollowed", `No longer following @${targetUser.username}.`);
+        setUserFollows((prev) => ({
+          ...prev,
+          users: (prev.users || []).filter((f) => f.targetId !== targetUserId),
+        }));
+      } else {
+        toast?.error?.("Action Failed", res?.message || "Could not unfollow account.");
+        loadDiscoverUsers();
+        loadUserFollows();
+      }
+    } else {
+      const res = await followTargetApi({
+        targetType: "user",
+        targetId: targetUserId,
+        targetName: targetUser.name,
+      });
+      if (res && res.success) {
+        toast?.success?.("Following Subscriber", `Now following @${targetUser.username}.`);
+        loadUserFollows();
+      } else {
+        toast?.error?.("Action Failed", res?.message || "Could not follow account.");
+        loadDiscoverUsers();
+        loadUserFollows();
+      }
+    }
+  };
+
+  const handleOpenUserProfile = (usernameOrId) => {
+    setSelectedProfileUsername(usernameOrId);
+    setIsProfileModalOpen(true);
+  };
+
+  const handleDeleteUser = async (targetUser) => {
+    if (!targetUser) return;
+    const isBrand = targetUser.accountType === "official_brand" || targetUser.username === "thedigitaltimes";
+    if (isBrand) {
+      toast?.error?.("Protected Account", "The official broadsheet brand account cannot be deleted.");
+      return;
+    }
+
+    const targetId = targetUser.id || targetUser._id || targetUser.username;
+    const isSelf = user?.id === targetId || user?._id === targetId || user?.username === targetUser.username;
+
+    const confirmMsg = isSelf
+      ? `Are you sure you want to permanently delete your account (@${targetUser.username})? This action cannot be undone.`
+      : `Are you sure you want to permanently delete subscriber @${targetUser.username} from the database?`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    try {
+      const res = await deleteUserApi(targetId);
+      if (res && res.success) {
+        toast?.success?.("Account Deleted", `Removed @${targetUser.username} from broadsheet registry.`);
+        if (isSelf) {
+          onLogout?.();
+        } else {
+          loadDiscoverUsers();
+          loadUserFollows();
+          if (followingTabFilter === "followers") {
+            loadUserFollowers();
+          }
+        }
+      } else {
+        toast?.error?.("Delete Failed", res?.message || "Could not delete user account.");
+      }
+    } catch (e) {
+      toast?.error?.("Error", e.message || "Failed to delete account.");
+    }
+  };
+
+  const handleToggleFollowDesk = async (deskId, deskLabel) => {
+    const isCurrentlyFollowing = userFollows.desks.some(
+      (f) => f.targetId.toLowerCase() === deskId.toLowerCase()
+    );
+
+    if (isCurrentlyFollowing) {
+      const res = await unfollowTargetApi(deskId.toLowerCase(), "desk");
+      if (res && res.success) {
+        toast?.success?.("Unfollowed Desk", `No longer following ${deskLabel}.`);
+        setUserFollows((prev) => ({
+          ...prev,
+          desks: prev.desks.filter(
+            (f) => f.targetId.toLowerCase() !== deskId.toLowerCase()
+          ),
+        }));
+      }
+    } else {
+      const res = await followTargetApi({
+        targetType: "desk",
+        targetId: deskId.toLowerCase(),
+        targetName: deskLabel,
+        targetDesk: deskId.toUpperCase(),
+      });
+      if (res && res.success) {
+        toast?.success?.("Following Desk", `Custom feed updated with ${deskLabel} dispatches.`);
+        loadUserFollows();
+      }
+    }
+  };
+
+  const handleRefreshNewDispatches = () => {
+    loadLiveArticles(false);
+    setNewDispatchesCount(0);
+    toast?.success?.("Wire Refreshed", "Loaded latest incoming broadsheet dispatches.");
+  };
 
   const safeReadingHistory = Array.isArray(readingHistory) ? readingHistory : [];
 
@@ -442,8 +703,8 @@ export default function YourTimesDashboard({
   };
 
   // Live stories loaded dynamically from NewsAPI / backend server
-  const [liveStories, setLiveStories] = useState(dashboardRecommendedStories);
-  const [isLoadingArticles, setIsLoadingArticles] = useState(false);
+  const [liveStories, setLiveStories] = useState([]);
+  const [isLoadingArticles, setIsLoadingArticles] = useState(true);
   const [isSyncingWire, setIsSyncingWire] = useState(false);
   const [wireError, setWireError] = useState(null);
 
@@ -484,6 +745,8 @@ export default function YourTimesDashboard({
     videoType: item.videoType || "embed",
     imageCaption: item.imageCaption || null,
     imageCredit: item.imageCredit || null,
+    verified: item.verified || false,
+    verificationCategory: item.verificationCategory || null,
   });
 
   const loadLiveArticles = async (isBackground = false) => {
@@ -495,6 +758,19 @@ export default function YourTimesDashboard({
     setWireError(null);
 
     try {
+      // First attempt to load personalized feed
+      const feedRes = await fetchPersonalizedFeedApi({
+        desk: activeCategory && activeCategory !== "ALL" ? activeCategory : undefined,
+        limit: 50,
+      });
+
+      if (feedRes && feedRes.success && Array.isArray(feedRes.data) && feedRes.data.length > 0) {
+        const mapped = feedRes.data.map(mapApiArticle);
+        setLiveStories(mapped);
+        return;
+      }
+
+      // Fallback to /api/articles
       const res = await fetch("/api/articles?limit=50", { cache: "no-store" });
       if (!res.ok) {
         throw new Error(`Wire status: HTTP ${res.status}`);
@@ -502,23 +778,13 @@ export default function YourTimesDashboard({
       const json = await res.json();
       if (json.articles && json.articles.length > 0) {
         const mapped = json.articles.map(mapApiArticle);
-        const seen = new Set();
-        const combined = [];
-        for (const s of [...mapped, ...dashboardRecommendedStories]) {
-          const key = s.headline?.toLowerCase().trim();
-          if (key && !seen.has(key)) {
-            seen.add(key);
-            combined.push(s);
-          }
-        }
-        setLiveStories(combined);
+        setLiveStories(mapped);
       } else if (json.articles && json.articles.length === 0) {
-        // Explicit empty response: show editorial empty state, not skeletons
         setLiveStories([]);
       }
     } catch (err) {
       console.warn("Could not load live articles:", err);
-      setWireError("Telegraph transmission failed to receive incoming dispatches.");
+      setWireError("Telegraph transmission failed to receive incoming dispatches. Check backend connection.");
     } finally {
       if (isBackground) {
         setIsSyncingWire(false);
@@ -975,7 +1241,7 @@ export default function YourTimesDashboard({
                 <button
                   onClick={() => {
                     setActiveTab("home");
-                    onNavigateToBroadsheet?.("frontpage");
+                    onNavigateToBroadsheet?.("masthead");
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === "home"
@@ -1091,7 +1357,7 @@ export default function YourTimesDashboard({
                 <button
                   onClick={() => {
                     setActiveTab("home");
-                    onNavigateToBroadsheet?.("frontpage");
+                    onNavigateToBroadsheet?.("masthead");
                   }}
                   aria-label="Home Broadsheet (Front Page)"
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
@@ -1278,13 +1544,25 @@ export default function YourTimesDashboard({
                   </div>
 
                   {/* User Details */}
-                  <div className="overflow-hidden pr-2 min-w-0 flex-1">
+                  <div
+                    onClick={() => setIsLoginOpen(true)}
+                    className="overflow-hidden pr-2 min-w-0 flex-1 cursor-pointer group hover:opacity-90 transition-opacity"
+                    title="Open Broadsheet Account Dossier"
+                  >
                     <span className="text-[10px] text-[#666666] block leading-tight font-serif italic">
                       Welcome back,
                     </span>
-                    <h2 className="font-serif font-bold text-sm text-[#201E19] leading-tight truncate">
-                      {currentUser.name}
-                    </h2>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <h2 className="font-serif font-bold text-sm text-[#201E19] leading-tight truncate">
+                        {currentUser.name}
+                      </h2>
+                      {(currentUser.verification?.status === "verified" || verificationStatus?.status === "verified") && (
+                        <VerifiedBadge
+                          category={currentUser.verification?.category || verificationStatus?.category || "journalist"}
+                          size="sm"
+                        />
+                      )}
+                    </div>
                     <span className="text-[10px] text-[#777777] font-mono truncate block">
                       {currentUser.email}
                     </span>
@@ -1302,7 +1580,7 @@ export default function YourTimesDashboard({
                   <button
                     onClick={() => {
                       setActiveTab("home");
-                      onNavigateToBroadsheet?.("frontpage");
+                      onNavigateToBroadsheet?.("masthead");
                     }}
                     title="Home (Broadsheet Edition)"
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
@@ -1466,7 +1744,7 @@ export default function YourTimesDashboard({
                   </button>
 
                   <button
-                    onClick={() => onNavigateToBroadsheet?.("frontpage")}
+                    onClick={() => onNavigateToBroadsheet?.("masthead")}
                     className="border border-[#766E5F] bg-[#201E19] hover:bg-[#2A2A2A] text-[#E8DFC8] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                     title="Open Full Cinematic Broadsheet"
                   >
@@ -1492,6 +1770,28 @@ export default function YourTimesDashboard({
                   );
                 })}
               </div>
+
+              {/* ── Subtle Real-Time Dispatch Alert (Non-intrusive) ── */}
+              {newDispatchesCount > 0 && (
+                <div className="bg-[#201E19] text-[#E8DFC8] border border-[#766E5F]/50 px-4 py-3 rounded-xl flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-serif font-bold text-sm tracking-wide">
+                      {newDispatchesCount} new {newDispatchesCount === 1 ? "dispatch" : "dispatches"} published to wire
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRefreshNewDispatches}
+                    className="px-3.5 py-1 bg-[#E8DFC8] text-[#201E19] text-xs font-mono font-bold uppercase rounded-md hover:bg-[#DFD6BD] transition-colors cursor-pointer shadow-xs"
+                  >
+                    View Updates ↑
+                  </button>
+                </div>
+              )}
 
               {/* ── Section: "Recommended for you" ────────────────── */}
               <section className="flex flex-col gap-4">
@@ -2125,7 +2425,10 @@ export default function YourTimesDashboard({
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {breakingHeadlines.slice(0, 3).map((headline, idx) => (
+                  {((updatedNewsStories && updatedNewsStories.length > 0)
+                    ? updatedNewsStories.slice(0, 3).map((s) => s.headline || s.title)
+                    : (breakingHeadlines || []).slice(0, 3)
+                  ).map((headline, idx) => (
                     <div
                       key={idx}
                       onClick={() => onOpenSearchModal?.()}
@@ -2318,41 +2621,470 @@ export default function YourTimesDashboard({
             </div>
           )}
 
-          {/* TAB 4: FOLLOWING */}
+          {/* TAB 4: SOCIAL FOLLOWING & DISCOVERY */}
           {activeTab === "following" && (
             <div className="flex flex-col gap-6">
-              <div className="border-b border-[#766E5F]/15 pb-3">
-                <h2 className="font-serif font-bold text-3xl text-[#201E19]">Followed Desks & Journalists</h2>
-                <p className="text-xs font-mono text-[#666666] uppercase mt-1">
-                  Custom feeds curated by you
-                </p>
+              <div className="border-b border-[#766E5F]/15 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono uppercase bg-[#201E19] text-[#E8DFC8] px-2 py-0.5 rounded font-bold tracking-wider">
+                      Social Registry
+                    </span>
+                    <h2 className="font-serif font-bold text-3xl text-[#201E19]">
+                      Social Discovery & Following
+                    </h2>
+                  </div>
+                  <p className="text-xs font-mono text-[#666666] uppercase mt-1">
+                    Connect with fellow subscribers, editorial staff, and the official journal
+                  </p>
+                </div>
+
+                {/* Sub-tabs: Discover | Following | Followers | Desks */}
+                <div className="flex bg-[#DFD6BD] p-1 rounded-lg text-xs font-mono overflow-x-auto">
+                  <button
+                    onClick={() => setFollowingTabFilter("discover")}
+                    className={`px-3 py-1.5 rounded-md font-bold uppercase transition-all cursor-pointer whitespace-nowrap ${
+                      followingTabFilter === "discover"
+                        ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                        : "text-[#39352D] hover:text-[#201E19]"
+                    }`}
+                  >
+                    Discover ({discoverUsers.length})
+                  </button>
+                  <button
+                    onClick={() => setFollowingTabFilter("following")}
+                    className={`px-3 py-1.5 rounded-md font-bold uppercase transition-all cursor-pointer whitespace-nowrap ${
+                      followingTabFilter === "following"
+                        ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                        : "text-[#39352D] hover:text-[#201E19]"
+                    }`}
+                  >
+                    Following ({userFollows.users?.length || 0})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFollowingTabFilter("followers");
+                      loadUserFollowers();
+                    }}
+                    className={`px-3 py-1.5 rounded-md font-bold uppercase transition-all cursor-pointer whitespace-nowrap ${
+                      followingTabFilter === "followers"
+                        ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                        : "text-[#39352D] hover:text-[#201E19]"
+                    }`}
+                  >
+                    Followers ({userFollowersList.length})
+                  </button>
+                  <button
+                    onClick={() => setFollowingTabFilter("desks")}
+                    className={`px-3 py-1.5 rounded-md font-bold uppercase transition-all cursor-pointer whitespace-nowrap ${
+                      followingTabFilter === "desks"
+                        ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
+                        : "text-[#39352D] hover:text-[#201E19]"
+                    }`}
+                  >
+                    Desks (10)
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { name: "Dr. Elena Rostova", desk: "AI & Computational Logic", followers: "42.8k" },
-                  { name: "Devon Reid", desk: "W3C Architecture & Systems", followers: "31.2k" },
-                  { name: "Vikram Malhotra", desk: "Deep Tech & Silicon Foundries", followers: "18.5k" },
-                  { name: "Eleanor Sterling", desk: "Editorial Design & Typography", followers: "24.1k" },
-                ].map((person, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 flex items-center justify-between"
-                  >
-                    <div>
-                      <h4 className="font-serif font-bold text-base text-[#201E19]">{person.name}</h4>
-                      <p className="text-xs text-[#666666] font-mono">{person.desk}</p>
-                      <span className="text-[10px] text-[#888888] font-mono mt-1 block">
-                        {person.followers} subscribers
-                      </span>
-                    </div>
-                    <button className="bg-[#201E19] text-[#E8DFC8] text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer">
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>Following</span>
-                    </button>
+              {/* Sub-tab 1: DISCOVER SUBSCRIBERS & OFFICIAL ACCOUNTS */}
+              {followingTabFilter === "discover" && (
+                <div className="flex flex-col gap-4">
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#766E5F]" />
+                    <input
+                      type="text"
+                      value={socialSearchQuery}
+                      onChange={(e) => setSocialSearchQuery(e.target.value)}
+                      placeholder="Search broadsheet subscribers by @username or name..."
+                      className="w-full bg-[#EFE8D5] border border-[#766E5F]/30 rounded-lg pl-10 pr-10 py-2.5 text-xs font-mono text-[#201E19] placeholder-[#766E5F] focus:outline-none focus:border-[#201E19] transition-colors"
+                    />
+                    {socialSearchQuery && (
+                      <button
+                        onClick={() => setSocialSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#766E5F] hover:text-[#201E19] cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
+
+                  {isLoadingDiscover ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[1, 2, 3, 4].map((n) => (
+                        <div key={n} className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-5 animate-pulse h-36" />
+                      ))}
+                    </div>
+                  ) : discoverUsers.length === 0 ? (
+                    <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
+                      <Users className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
+                      <p className="font-serif text-lg text-[#39352D]">No matching accounts found</p>
+                      <p className="text-xs text-[#777777] font-mono mt-1">
+                        Try searching for another @username or view all broadsheet accounts.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {discoverUsers.map((targetUser) => {
+                        const targetUserId = targetUser.id || targetUser._id;
+                        const isFollowing =
+                          targetUser.isFollowing ||
+                          userFollows.users?.some(
+                            (f) =>
+                              f.targetId === targetUserId ||
+                              f.username?.toLowerCase() === targetUser.username?.toLowerCase()
+                          );
+
+                        const isOfficial =
+                          targetUser.accountType === "official_brand" ||
+                          targetUser.username?.toLowerCase() === "thedigitaltimes";
+
+                        return (
+                          <div
+                            key={targetUserId || targetUser.username}
+                            className={`bg-[#EFE8D5] border rounded-xl p-5 flex flex-col justify-between gap-4 transition-all relative overflow-hidden ${
+                              isOfficial
+                                ? "border-[#C2A649]/60 shadow-xs"
+                                : "border-[#766E5F]/20 hover:border-[#766E5F]/50"
+                            }`}
+                          >
+                            {/* Official Brand Header Strip */}
+                            {isOfficial && (
+                              <div className="absolute top-0 right-0 bg-[#C2A649]/20 border-b border-l border-[#C2A649]/40 text-[#8C7326] px-2.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider rounded-bl">
+                                Official Newspaper Journal
+                              </div>
+                            )}
+
+                            <div className="flex items-start gap-3.5">
+                              {/* Avatar */}
+                              <div
+                                onClick={() => handleOpenUserProfile(targetUser.username)}
+                                className="w-12 h-12 rounded-full bg-[#201E19] text-[#E8DFC8] border border-[#766E5F]/30 flex items-center justify-center font-serif text-lg font-bold shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
+                              >
+                                {targetUser.avatar ? (
+                                  <img
+                                    src={targetUser.avatar}
+                                    alt={targetUser.name}
+                                    className="w-full h-full rounded-full object-cover"
+                                  />
+                                ) : (
+                                  targetUser.name.charAt(0).toUpperCase()
+                                )}
+                              </div>
+
+                              {/* Info */}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4
+                                    onClick={() => handleOpenUserProfile(targetUser.username)}
+                                    className="font-serif font-bold text-base text-[#201E19] hover:underline cursor-pointer truncate"
+                                  >
+                                    {targetUser.name}
+                                  </h4>
+                                  {targetUser.isVerified && (
+                                    <VerifiedBadge
+                                      category={isOfficial ? "publication" : targetUser.verification?.category || "journalist"}
+                                      size="sm"
+                                    />
+                                  )}
+                                </div>
+                                <p className="text-xs text-[#666666] font-mono">
+                                  @{targetUser.username}
+                                </p>
+
+                                <p className="text-[11px] text-[#555555] font-sans mt-1 line-clamp-2 italic">
+                                  {targetUser.bio || "Registered subscriber of The Digital Times broadsheet."}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Stats & Actions */}
+                            <div className="flex items-center justify-between border-t border-[#766E5F]/15 pt-3 mt-1">
+                              <div className="flex items-center gap-3 text-xs font-mono text-[#666666]">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenUserProfile(targetUser.username)}
+                                  className="hover:underline cursor-pointer"
+                                >
+                                  <strong className="text-[#201E19] font-bold">
+                                    {targetUser.followerCount || 0}
+                                  </strong>{" "}
+                                  followers
+                                </button>
+                                <span className="text-[#766E5F]/30">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenUserProfile(targetUser.username)}
+                                  className="hover:underline cursor-pointer"
+                                >
+                                  <strong className="text-[#201E19] font-bold">
+                                    {targetUser.followingCount || 0}
+                                  </strong>{" "}
+                                  following
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {!isOfficial && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteUser(targetUser)}
+                                    className="text-xs px-2.5 py-1.5 rounded-lg border border-[#9F3028]/40 text-[#9F3028] hover:bg-[#9F3028] hover:text-[#E8DFC8] font-mono transition-colors cursor-pointer flex items-center gap-1"
+                                    title={`Delete @${targetUser.username} from database`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Delete</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleFollowUser(targetUser)}
+                                  className={`text-xs px-3.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                                    isFollowing
+                                      ? "bg-[#201E19] text-[#E8DFC8] hover:bg-[#9F3028]"
+                                      : "border-2 border-[#201E19] text-[#201E19] hover:bg-[#201E19] hover:text-[#E8DFC8]"
+                                  }`}
+                                >
+                                  {isFollowing ? (
+                                    <>
+                                      <UserCheck className="w-3.5 h-3.5" />
+                                      <span>Following</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Follow</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-tab 2: ACCOUNTS YOU FOLLOW */}
+              {followingTabFilter === "following" && (
+                <div className="flex flex-col gap-4">
+                  {userFollows.users?.length === 0 ? (
+                    <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
+                      <Users className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
+                      <p className="font-serif text-lg text-[#39352D]">You are not following any subscribers yet</p>
+                      <p className="text-xs text-[#777777] font-mono mt-1">
+                        Explore the Discover tab to connect with broadsheet journalists, readers, and official dispatches.
+                      </p>
+                      <button
+                        onClick={() => setFollowingTabFilter("discover")}
+                        className="mt-4 px-4 py-2 bg-[#201E19] text-[#E8DFC8] text-xs font-semibold rounded-lg font-mono uppercase cursor-pointer hover:bg-[#333333]"
+                      >
+                        Discover Subscribers
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {userFollows.users?.map((f) => (
+                        <div
+                          key={f._id || f.targetId}
+                          className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 flex items-center justify-between gap-3 hover:border-[#766E5F]/50 transition-all"
+                        >
+                          <div
+                            onClick={() => handleOpenUserProfile(f.username || f.targetId)}
+                            className="flex items-center gap-3 min-w-0 cursor-pointer"
+                          >
+                            <div className="w-10 h-10 rounded-full bg-[#201E19] text-[#E8DFC8] flex items-center justify-center font-serif text-base font-bold shrink-0">
+                              {f.avatar ? (
+                                <img src={f.avatar} alt={f.name || f.targetName} className="w-full h-full rounded-full object-cover" />
+                              ) : (
+                                (f.name || f.targetName).charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h4 className="font-serif font-bold text-sm text-[#201E19] truncate">
+                                  {f.name || f.targetName}
+                                </h4>
+                                {f.isVerified && (
+                                  <VerifiedBadge category={f.accountType === "official_brand" ? "publication" : "journalist"} size="sm" />
+                                )}
+                              </div>
+                              <span className="text-[10px] font-mono text-[#666666] block truncate">
+                                @{f.username || "subscriber"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFollowUser({ id: f.targetId, _id: f.targetId, name: f.name || f.targetName, username: f.username, isFollowing: true })}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-[#201E19] text-[#E8DFC8] hover:bg-[#9F3028] transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Following</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-tab 3: SUBSCRIBERS FOLLOWING YOU */}
+              {followingTabFilter === "followers" && (
+                <div className="flex flex-col gap-4">
+                  {isLoadingFollowers ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[1, 2, 3].map((n) => (
+                        <div key={n} className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 animate-pulse h-20" />
+                      ))}
+                    </div>
+                  ) : userFollowersList.length === 0 ? (
+                    <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
+                      <Users className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
+                      <p className="font-serif text-lg text-[#39352D]">No subscribers following you yet</p>
+                      <p className="text-xs text-[#777777] font-mono mt-1">
+                        When other readers follow your broadsheet activity, they will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {userFollowersList.map((follower) => {
+                        const isFollowingThem = userFollows.users?.some(
+                          (f) => f.targetId === follower.id || f.targetId === follower._id
+                        );
+
+                        return (
+                          <div
+                            key={follower.id || follower._id}
+                            className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 flex items-center justify-between gap-3 hover:border-[#766E5F]/50 transition-all"
+                          >
+                            <div
+                              onClick={() => handleOpenUserProfile(follower.username)}
+                              className="flex items-center gap-3 min-w-0 cursor-pointer"
+                            >
+                              <div className="w-10 h-10 rounded-full bg-[#201E19] text-[#E8DFC8] flex items-center justify-center font-serif text-base font-bold shrink-0">
+                                {follower.avatar ? (
+                                  <img src={follower.avatar} alt={follower.name} className="w-full h-full rounded-full object-cover" />
+                                ) : (
+                                  follower.name.charAt(0).toUpperCase()
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4 className="font-serif font-bold text-sm text-[#201E19] truncate">
+                                    {follower.name}
+                                  </h4>
+                                  {follower.isVerified && (
+                                    <VerifiedBadge category={follower.accountType === "official_brand" ? "publication" : "journalist"} size="sm" />
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-mono text-[#666666] block truncate">
+                                  @{follower.username}
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFollowUser(follower)}
+                              className={`text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0 ${
+                                isFollowingThem
+                                  ? "bg-[#201E19] text-[#E8DFC8] hover:bg-[#9F3028]"
+                                  : "border border-[#201E19] text-[#201E19] hover:bg-[#201E19] hover:text-[#E8DFC8]"
+                              }`}
+                            >
+                              {isFollowingThem ? (
+                                <>
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                  <span>Following</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Follow Back</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-tab 4: EDITORIAL DESKS */}
+              {followingTabFilter === "desks" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { id: "frontpage", label: "Front Page", desc: "Lead investigations and top editorial broadside dispatches" },
+                    { id: "ai", label: "The AI Desk", desc: "Frontier reasoning, autonomous models & synthetic cognition" },
+                    { id: "web", label: "Web Dev Desk", desc: "Local-first runtimes, WebAssembly, browser architecture" },
+                    { id: "startups", label: "Startups Desk", desc: "Venture capital, seed rounds & autonomous founders" },
+                    { id: "design", label: "Editorial Design Desk", desc: "Typography, broadsheet aesthetics & layout systems" },
+                    { id: "security", label: "Security Desk", desc: "Cryptography, zero-day research & defensive meshes" },
+                    { id: "gaming", label: "Gaming & Simulation Desk", desc: "Spatial engines, graphics pipelines & virtual physics" },
+                    { id: "culture", label: "Internet Culture Desk", desc: "Network sociology, digital artifacts & computational philosophy" },
+                    { id: "business", label: "Markets & Business Desk", desc: "Compute commodities, data vault financing & macroeconomics" },
+                    { id: "future", label: "Future & Science Desk", desc: "Quantum links, biocomputing & frontier experimental physics" },
+                  ].map((desk) => {
+                    const isFollowing = userFollows.desks.some(
+                      (f) => f.targetId.toLowerCase() === desk.id.toLowerCase()
+                    );
+
+                    return (
+                      <div
+                        key={desk.id}
+                        className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-4 flex flex-col justify-between gap-3 hover:border-[#766E5F]/50 transition-all"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono font-bold bg-[#201E19] text-[#E8DFC8] px-1.5 py-0.5 rounded">
+                              DESK
+                            </span>
+                            <h4 className="font-serif font-bold text-base text-[#201E19]">{desk.label}</h4>
+                          </div>
+                          <p className="text-xs text-[#555555] font-sans mt-1">
+                            {desk.desc}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t border-[#766E5F]/15 pt-2">
+                          <span className="text-[10px] text-[#777777] font-mono uppercase">
+                            Broadsheet Section
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFollowDesk(desk.id, desk.label)}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                              isFollowing
+                                ? "bg-[#201E19] text-[#E8DFC8] hover:bg-[#9F3028]"
+                                : "border border-[#201E19] text-[#201E19] hover:bg-[#201E19] hover:text-[#E8DFC8]"
+                            }`}
+                          >
+                            {isFollowing ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Subscribed</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Follow Desk</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -2514,6 +3246,44 @@ export default function YourTimesDashboard({
                     Ready
                   </span>
                 </div>
+
+                {/* Press Verification Card */}
+                <div className="pt-4 border-t border-[#766E5F]/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-serif font-bold text-base text-[#201E19]">Editorial Broadside Verification</h4>
+                      {verificationStatus?.status === "verified" ? (
+                        <VerifiedBadge category={verificationStatus?.category || "journalist"} size="sm" showLabel={true} />
+                      ) : verificationStatus?.status === "pending" ? (
+                        <span className="text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#856404] border border-[#D4AF37]/40 px-2 py-0.5 rounded">
+                          PENDING EDITORIAL REVIEW
+                        </span>
+                      ) : verificationStatus?.status === "rejected" ? (
+                        <span className="text-[10px] font-mono font-bold bg-[#9F3028]/15 text-[#9F3028] border border-[#9F3028]/30 px-2 py-0.5 rounded">
+                          NOT APPROVED
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono font-bold bg-[#766E5F]/10 text-[#666666] px-2 py-0.5 rounded">
+                          UNVERIFIED
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#666666] font-mono mt-0.5">
+                      Accreditation for journalists, editors, and publishers across The Digital Times
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsVerificationOpen(true)}
+                    className="px-4 py-2 bg-[#201E19] text-[#E8DFC8] text-xs font-mono uppercase font-bold tracking-wider hover:bg-[#39352D] rounded-lg transition-colors cursor-pointer"
+                  >
+                    {verificationStatus?.status === "verified"
+                      ? "View Credentials"
+                      : verificationStatus?.status === "pending"
+                      ? "Review Application"
+                      : "Request Verification"}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2637,62 +3407,52 @@ export default function YourTimesDashboard({
         </div>
       )}
 
-      {/* User Login Profile Modal */}
-      {isLoginOpen && (
-        <div className="fixed inset-0 z-50 bg-[#201E19]/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#EFE8D5] border-2 border-[#766E5F] rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative text-center">
-            <button
-              onClick={() => setIsLoginOpen(false)}
-              className="absolute top-4 right-4 p-1 rounded hover:bg-[#766E5F]/10 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+      {/* Upgraded Instagram-Inspired Social Account Profile Dossier Modal */}
+      <AccountProfileModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+        user={currentUser}
+        onLogout={onLogout}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          setIsLoginOpen(false);
+        }}
+        onOpenArticle={onOpenArticle}
+        onUpdateUser={(updated) => {
+          if (onUpdateUser) onUpdateUser(updated);
+          setCurrentUser((prev) => ({ ...prev, ...updated }));
+        }}
+        savedClippings={safeClippings}
+        readingHistory={safeReadingHistory}
+        unreadNotificationsCount={liveNotifications.filter((n) => n.unread).length}
+        onFollowToggle={() => {
+          loadDiscoverUsers();
+          loadUserFollows();
+        }}
+      />
 
-            <div className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-[#766E5F] ring-2 ring-[#C5A059]/40 ring-offset-2 ring-offset-[#EFE8D5] bg-[#201E19] flex items-center justify-center shadow-md">
-              <span className="font-serif font-bold text-2xl text-[#E8DFC8] select-none tracking-widest">
-                {getInitials(currentUser.name)}
-              </span>
-            </div>
+      {/* Editorial Press Verification Modal */}
+      <VerificationModal
+        isOpen={isVerificationOpen}
+        onClose={() => setIsVerificationOpen(false)}
+        onVerificationUpdated={loadVerificationStatus}
+      />
 
-            <h3 className="font-serif font-bold text-xl text-[#201E19]">{currentUser.name}</h3>
-            <p className="text-xs font-mono text-[#666666] mb-1">{currentUser.email}</p>
-            <span className="inline-block bg-[#201E19] text-[#E8DFC8] text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase mb-4">
-              {currentUser.role || "PRO SUBSCRIBER"} • {currentUser.edition || "EDITION #001"}
-            </span>
-
-            <div className="border-t border-[#766E5F]/15 pt-3 space-y-2 text-left text-xs font-mono">
-              <div className="flex justify-between py-1 border-b border-[#766E5F]/10">
-                <span className="text-[#666666]">Subscription</span>
-                <span className="font-bold text-[#201E19]">Annual Broadsheet</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#766E5F]/10">
-                <span className="text-[#666666]">Clippings Saved</span>
-                <span className="font-bold text-[#201E19]">{safeClippings.length}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 mt-5">
-              <button
-                onClick={() => {
-                  setIsLoginOpen(false);
-                  onLogout?.();
-                }}
-                className="w-full border border-[#9F3028] text-[#9F3028] hover:bg-[#9F3028] hover:text-[#E8DFC8] text-xs font-semibold py-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono uppercase tracking-wider"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Log Out / Switch Account</span>
-              </button>
-
-              <button
-                onClick={() => setIsLoginOpen(false)}
-                className="w-full bg-[#201E19] text-[#E8DFC8] text-xs font-semibold py-2 rounded-lg hover:bg-[#2A2A2A] cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Instagram-Style User Profile Dossier Modal */}
+      <UserProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        usernameOrId={selectedProfileUsername}
+        currentUser={user}
+        onFollowToggle={() => {
+          loadDiscoverUsers();
+          loadUserFollows();
+        }}
+        onDeleteUser={(targetUser) => {
+          setIsProfileModalOpen(false);
+          handleDeleteUser(targetUser);
+        }}
+      />
     </div>
   );
 }
