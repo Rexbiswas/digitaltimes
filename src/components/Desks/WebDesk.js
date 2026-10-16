@@ -61,26 +61,9 @@ export default function WebDesk({ onOpenStory }) {
               {lead.body}
             </p>
 
-            {/* Tiny Code Snippet as an Editorial Woodcut / Etching Element */}
-            <div className="my-6 border-2 border-[#766E5F] bg-[#DFD5BC] p-3 shadow-inner">
-              <div className="flex items-center justify-between border-b border-[#766E5F] pb-1.5 mb-2 font-mono text-[10px] text-[#201E19] font-bold">
-                <span className="flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-[#9F3028]" />
-                  EXHIBIT B: DRAFT SPECIFICATION (RFC-9482)
-                </span>
-                <span className="text-[#39352D]">[TYPESCRIPT SYNTAX]</span>
-              </div>
-              <pre className="font-mono text-[11px] leading-relaxed text-[#201E19] overflow-x-auto p-2 bg-[#E8DFC8] border border-[#766E5F]/30">
-                <code>{lead.codeSnippet}</code>
-              </pre>
-              <div className="mt-1.5 text-[9px] font-mono text-[#666666] italic">
-                Figure 1.2 — The negotiation contract between human-facing browsers and background agent reasoning clusters.
-              </div>
-            </div>
-
             <button
               onClick={() => onOpenStory(lead)}
-              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#201E19] hover:text-[#9F3028] border border-[#766E5F] px-3 py-1.5 hover:bg-[#201E19] hover:text-[#E8DFC8] transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#201E19] hover:text-[#9F3028] border border-[#766E5F] px-3 py-1.5 hover:bg-[#201E19] hover:text-[#E8DFC8] transition-all cursor-pointer mt-4"
               data-cursor="READ"
             >
               <span>Examine Specification</span>

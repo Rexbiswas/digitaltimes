@@ -6,6 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { startupDeskData } from "@/data/newspaperData";
 import { Play, ArrowRight } from "lucide-react";
 import SplitHeadline from "@/components/motion/SplitHeadline";
+import RealtimeVentureCharts from "@/components/newspaper/RealtimeVentureCharts";
 
 export default function StartupScene({ onOpenStory, articles }) {
   const currentLead =
@@ -195,81 +196,9 @@ export default function StartupScene({ onOpenStory, articles }) {
             )}
           </div>
 
-          {/* Deal Ledger & Adoption Chart (6 columns) */}
-          <div className="lg:col-span-6 min-w-0 space-y-6">
-            {/* The Financial Deal Table */}
-            <div className="border-2 border-[#766E5F] p-4 bg-[#DFD5BC]">
-              <div className="flex items-center justify-between border-b border-[#766E5F] pb-2 mb-3">
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#201E19]">
-                  THE WEEK IN VENTURE ROUNDS
-                </span>
-                <span className="font-mono text-[9px] bg-[#201E19] text-[#E8DFC8] px-1 font-bold">
-                  Q3 2026 LEDGER
-                </span>
-              </div>
-
-              <div className="overflow-x-auto no-scrollbar scrollbar-none">
-                <table className="w-full text-left font-mono text-[11px] text-[#222222]">
-                  <thead>
-                    <tr className="border-b border-[#766E5F]/40 text-[#39352D]">
-                      <th className="py-1">SYNDICATE</th>
-                      <th className="py-1">STAGE</th>
-                      <th className="py-1">AMOUNT</th>
-                      <th className="py-1">POST-VAL</th>
-                      <th className="py-1 text-right">FOCUS</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#766E5F]/20">
-                    {dealFlow.map((deal, idx) => (
-                      <tr
-                        key={deal.company || `deal-${idx}`}
-                        ref={(node) => (dealsRef.current[idx] = node)}
-                        className="hover:bg-[#201E19]/5 will-change-transform"
-                      >
-                        <td className="py-2 font-bold text-[#201E19]">{deal.company}</td>
-                        <td className="py-2 text-[#39352D]">{deal.round}</td>
-                        <td className="py-2 font-black text-[#9F3028]">{deal.amount}</td>
-                        <td className="py-2 font-semibold text-[#201E19]">{deal.valuation}</td>
-                        <td className="py-2 text-right text-[10px] text-[#39352D]">{deal.focus}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Editorial ASCII Data Chart */}
-            <div
-              ref={chartRef}
-              className="border border-[#766E5F] p-4 bg-[#E8DFC8]"
-            >
-              <div className="text-[10px] font-mono text-[#9F3028] font-bold uppercase tracking-widest mb-1">
-                COMPUTE PRICING EVOLUTION (2022–2026)
-              </div>
-              <h5 className="font-serif font-bold text-base text-[#201E19] uppercase mb-3">
-                Shift from Per-Seat SaaS to Outcome-Based Autonomous Escrow
-              </h5>
-
-              <div className="space-y-2 font-mono text-xs">
-                {chartData.map((row, idx) => (
-                  <div
-                    key={row.year || `chart-${idx}`}
-                    className="chart-row flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-[#766E5F]/10 will-change-transform"
-                  >
-                    <span className="font-bold text-[#201E19] w-12">{row.year}</span>
-                    <span className="text-[#9F3028] font-mono font-bold tracking-tighter">
-                      {row.value}
-                    </span>
-                    <span className="text-[10px] text-[#39352D] italic sm:text-right">
-                      {row.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 text-[9px] font-mono text-[#777777] italic text-right">
-                Source: The Digital Times Financial Analytics Desk
-              </div>
-            </div>
+          {/* Real-Time Venture Intelligence & Interactive D3 Charts (6 columns) */}
+          <div className="lg:col-span-6 min-w-0">
+            <RealtimeVentureCharts initialDeals={dealFlow} />
           </div>
         </div>
       </div>
