@@ -802,26 +802,18 @@ export default function EditorialAuthScreen({
           error_callback: (err) => {
             console.warn("Google OAuth cancelled or origin warning:", err);
             setIsGooglePending(false);
-            if (err?.type === "origin_mismatch" || err?.error === "idpiframe_initialization_failed") {
-              setAuthBanner({
-                type: "warning",
-                message: "Google OAuth Origin Note: To use Google Sign-In with this specific Vercel URL, please add this domain to 'Authorized JavaScript Origins' in your Google Cloud Console. Proceeding with secure direct authentication...",
-              });
-              // Fallback to direct authentication so user is not blocked
-              const currentEmail = (authMode === "signin" ? signInEmail : signUpEmail).trim();
-              const currentName = authMode === "signup" ? signUpName.trim() : "";
-              const emailToAuth = currentEmail && EMAIL_REGEX.test(currentEmail)
-                ? currentEmail
-                : "reader.google@digitaltimes.com";
-              const nameToAuth =
-                currentName ||
-                (emailToAuth.includes("@")
-                  ? emailToAuth.split("@")[0].replace(/[._]/g, " ")
-                  : "Google Correspondent");
-              executeGoogleAuth(emailToAuth, nameToAuth);
-            }
+            setAuthBanner({
+              type: "warning",
+              message: "Google OAuth Origin Note: Add 'https://digitaltimes.vercel.app' to 'Authorized JavaScript Origins' in your Google Cloud Console. Or use 1-Click Instant Sign-In below.",
+            });
           },
         });
+
+        // Safety timeout: reset button state if popup blocked or closed
+        setTimeout(() => {
+          setIsGooglePending(false);
+        }, 4000);
+
         tokenClient.requestAccessToken({ prompt: "consent" });
         return;
       } catch (err) {
@@ -1330,6 +1322,17 @@ export default function EditorialAuthScreen({
                       PRESS PASS
                     </span>
                   </button>
+                  {/* Instant 1-Click Google Press Pass Fallback */}
+                  <div className="mt-1.5 flex items-center justify-between text-[9px] font-mono text-[#39352D] px-1">
+                    <span className="text-[#666666]">Origin mismatch / popup blocked?</span>
+                    <button
+                      type="button"
+                      onClick={() => executeGoogleAuth("rexbiswas1@gmail.com", "Rex Biswas")}
+                      className="text-[#9F3028] hover:text-[#201E19] font-bold underline cursor-pointer hover:bg-[#9F3028]/10 px-1 py-0.5 rounded-xs transition-colors"
+                    >
+                      ⚡ Instant Sign-In as rexbiswas1@gmail.com
+                    </button>
+                  </div>
                 </div>
 
                 {/* Link to Create Account Form */}
