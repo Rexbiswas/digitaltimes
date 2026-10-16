@@ -3211,17 +3211,6 @@ export default function YourTimesDashboard({
               </div>
 
               <div className="bg-[#EFE8D5] border border-[#766E5F]/20 rounded-xl p-6 space-y-6">
-                <div className="flex items-center justify-between pb-4 border-b border-[#766E5F]/10">
-                  <div>
-                    <h4 className="font-serif font-bold text-base text-[#201E19]">Real-Time Feed Updates</h4>
-                    <p className="text-xs text-[#666666] font-mono mt-0.5">
-                      Stream live market indicators and teletype bulletins continuously
-                    </p>
-                  </div>
-                  <span className="bg-emerald-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">
-                    Enabled
-                  </span>
-                </div>
 
                 <div className="flex items-center justify-between pb-4 border-b border-[#766E5F]/10">
                   <div>
