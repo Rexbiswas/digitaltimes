@@ -1,11 +1,52 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { startupDeskData } from "@/data/newspaperData";
 import { TrendingUp, DollarSign, Layers, ArrowUpRight } from "lucide-react";
 import RealtimeVentureCharts from "@/components/newspaper/RealtimeVentureCharts";
 
 export default function StartupDesk({ onOpenStory }) {
   const { lead, dealFlow, chartData } = startupDeskData;
+
+  const [realtimeStat, setRealtimeStat] = useState({
+    amount: 140,
+    amountStr: "$140M",
+    label: "AVERAGE TIER-1 AI LAB SEED VALUATION",
+    subtext: "Autonomous studios with zero human payroll achieve $1B+ market caps in record time",
+    isLive: false,
+    source: "NewsAPI Live",
+    company: "Synthetix Dynamics",
+    stage: "Series A",
+    updatedAt: null,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLive = async () => {
+      try {
+        const res = await fetch("/api/newsroom/venture-analytics", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.success && Array.isArray(data.deals) && data.deals.length > 0) {
+            const sorted = [...data.deals].sort((a, b) => b.amount - a.amount);
+            const top = sorted[0];
+            setRealtimeStat({
+              amount: top.amount,
+              amountStr: top.amountStr || `$${top.amount}M`,
+              label: `LIVE NEWSAPI TOP CAPITAL DEAL: ${top.company.toUpperCase()}`,
+              subtext: `${top.focus || top.title || "Frontier AI infrastructure and autonomous reasoning systems"} — Via ${top.source} wire`,
+              isLive: true,
+              source: top.source || "NewsAPI Live",
+              company: top.company,
+              stage: top.stage,
+              updatedAt: new Date(),
+            });
+          }
+        }
+      } catch (e) {}
+    };
+    fetchLive();
+  }, []);
 
   return (
     <section id="startups" className="w-full bg-[#E8DFC8] py-10 border-b border-[#766E5F]">
@@ -49,17 +90,41 @@ export default function StartupDesk({ onOpenStory }) {
               {lead.headline}
             </h4>
 
-            {/* Giant Financial Stat Callout (as requested in Section 16) */}
-            <div className="my-6 border-y-4 border-[#766E5F] py-4 bg-[#DFD5BC] text-center">
+            {/* Giant Financial Stat Callout with Real-Time NewsAPI Data */}
+            <div className="my-6 border-y-4 border-[#766E5F] py-4 bg-[#DFD5BC] text-center relative overflow-hidden">
+              <div className="flex items-center justify-center gap-1.5 mb-1.5">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#9F3028] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#9F3028]"></span>
+                </span>
+                <span className="font-mono text-[9px] uppercase tracking-widest text-[#9F3028] font-bold">
+                  {realtimeStat.isLive ? "REAL-TIME NEWSAPI CAPITAL TELEMETRY" : "VENTURE CAPITAL TELEMETRY"}
+                </span>
+                {realtimeStat.isLive && (
+                  <span className="bg-[#201E19] text-[#E8DFC8] font-mono text-[8px] font-bold px-1 py-0.5 tracking-wider">
+                    LIVE WIRE
+                  </span>
+                )}
+              </div>
+
               <div className="font-mono text-5xl sm:text-6xl md:text-7xl font-black text-[#201E19] tracking-tight">
-                {lead.highlightStat}
+                ${realtimeStat.amount}M
               </div>
-              <div className="font-mono text-xs sm:text-sm tracking-[0.25em] uppercase text-[#9F3028] font-bold mt-1">
-                {lead.highlightLabel}
+
+              <div className="font-mono text-xs sm:text-sm tracking-[0.2em] uppercase text-[#9F3028] font-bold mt-1 px-2">
+                {realtimeStat.label}
               </div>
-              <div className="text-[11px] font-serif italic text-[#39352D] mt-1">
-                Autonomous studios with zero human payroll achieve $1B+ market caps in record time
+
+              <div className="text-[11px] font-serif italic text-[#39352D] mt-1.5 px-4 max-w-xl mx-auto leading-relaxed">
+                {realtimeStat.subtext}
               </div>
+
+              {realtimeStat.isLive && (
+                <div className="mt-2 text-[9px] font-mono text-[#766E5F] flex flex-wrap items-center justify-center gap-3">
+                  <span>Wire Source: <b>{realtimeStat.source}</b></span>
+                  {realtimeStat.stage && <span>Round: <b>{realtimeStat.stage}</b></span>}
+                </div>
+              )}
             </div>
 
             <p className="font-serif text-base sm:text-lg text-[#39352D] leading-relaxed mb-4">
