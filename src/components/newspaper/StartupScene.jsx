@@ -30,9 +30,7 @@ export default function StartupScene({ onOpenStory, articles }) {
   const containerRef = useRef(null);
   const statBoxRef = useRef(null);
   const numberRef = useRef(null);
-  const dealsRef = useRef([]);
 
-  // Fetch real-time NewsAPI capital metrics
   useEffect(() => {
     let isMounted = true;
     const fetchLiveStat = async () => {
@@ -99,47 +97,6 @@ export default function StartupScene({ onOpenStory, articles }) {
             }
           },
         });
-      }
-
-      // Deal ledger slide in
-      const deals = dealsRef.current.filter(Boolean);
-      if (deals.length > 0) {
-        gsap.fromTo(
-          deals,
-          { x: 25, opacity: 0 },
-          {
-            x: 0,
-            opacity: 1,
-            stagger: 0.1,
-            duration: 0.6,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: container,
-              start: "top 65%",
-              toggleActions: "play none none reverse",
-            },
-          }
-        );
-      }
-
-      // ASCII Chart rows reveal
-      if (chartRef.current) {
-        gsap.fromTo(
-          chartRef.current.querySelectorAll(".chart-row"),
-          { scaleX: 0.2, opacity: 0, transformOrigin: "left" },
-          {
-            scaleX: 1,
-            opacity: 1,
-            stagger: 0.12,
-            duration: 0.8,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: chartRef.current,
-              start: "top 80%",
-              toggleActions: "play none none reverse",
-            },
-          }
-        );
       }
     }, containerRef);
 
