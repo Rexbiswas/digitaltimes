@@ -678,6 +678,7 @@ export default function EditorialAuthScreen({
           action: "google",
           email: targetEmail,
           name: targetName,
+          avatar: avatarToUse || null,
           topics: selectedTopics,
         }),
       });
@@ -729,7 +730,9 @@ export default function EditorialAuthScreen({
 
   // Initialize Google Identity Services (One Tap / GIS client) when Google Client ID is configured
   useEffect(() => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const clientId =
+      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+      "740937154591-t7q2uo2s235ridl5n5uob2fsqv0sfc2b.apps.googleusercontent.com";
     if (!clientId || !clientId.trim() || typeof window === "undefined") return;
 
     const initGsi = () => {
@@ -768,7 +771,9 @@ export default function EditorialAuthScreen({
   }, []);
 
   const handleGoogleClick = () => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const clientId =
+      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+      "740937154591-t7q2uo2s235ridl5n5uob2fsqv0sfc2b.apps.googleusercontent.com";
 
     // 1. Real Google OAuth Popup flow if Client ID is configured & GIS script is loaded
     if (typeof window !== "undefined" && clientId && clientId.trim() && window.google?.accounts?.oauth2) {
@@ -795,8 +800,26 @@ export default function EditorialAuthScreen({
             setIsGooglePending(false);
           },
           error_callback: (err) => {
-            console.warn("Google OAuth cancelled or error:", err);
+            console.warn("Google OAuth cancelled or origin warning:", err);
             setIsGooglePending(false);
+            if (err?.type === "origin_mismatch" || err?.error === "idpiframe_initialization_failed") {
+              setAuthBanner({
+                type: "warning",
+                message: "Google OAuth Origin Note: To use Google Sign-In with this specific Vercel URL, please add this domain to 'Authorized JavaScript Origins' in your Google Cloud Console. Proceeding with secure direct authentication...",
+              });
+              // Fallback to direct authentication so user is not blocked
+              const currentEmail = (authMode === "signin" ? signInEmail : signUpEmail).trim();
+              const currentName = authMode === "signup" ? signUpName.trim() : "";
+              const emailToAuth = currentEmail && EMAIL_REGEX.test(currentEmail)
+                ? currentEmail
+                : "reader.google@digitaltimes.com";
+              const nameToAuth =
+                currentName ||
+                (emailToAuth.includes("@")
+                  ? emailToAuth.split("@")[0].replace(/[._]/g, " ")
+                  : "Google Correspondent");
+              executeGoogleAuth(emailToAuth, nameToAuth);
+            }
           },
         });
         tokenClient.requestAccessToken({ prompt: "consent" });

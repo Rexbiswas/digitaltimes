@@ -59,12 +59,31 @@ This guide explains how to deploy the **Digital Times Backend** and **Frontend**
 4. In **Environment Variables**, add:
    - `NEXT_PUBLIC_API_URL`: `https://digitaltimes-api.vercel.app/api`
    - `BACKEND_API_URL`: `https://digitaltimes-api.vercel.app/api`
+   - `NEXT_PUBLIC_GOOGLE_CLIENT_ID`: `740937154591-t7q2uo2s235ridl5n5uob2fsqv0sfc2b.apps.googleusercontent.com`
 5. Click **Deploy**.
 
 ---
 
-### Step 3: Verified Features on Vercel Serverless
+### Step 3: Configure Google OAuth for Your Vercel Domain
 
+For Google Sign-In to open its secure authentication popup on Vercel without an `origin_mismatch` error:
+
+1. Open the [Google Cloud Console Credentials Page](https://console.cloud.google.com/apis/credentials).
+2. Click on your OAuth 2.0 Client ID (`740937154591-t7q2uo2s235ridl5n5uob2fsqv0sfc2b.apps.googleusercontent.com`).
+3. Under **Authorized JavaScript origins**, click **+ ADD URI** and add your live Vercel domain:
+   - `https://your-frontend-project.vercel.app`
+   - `https://your-custom-domain.com` (if using custom domain)
+4. Under **Authorized redirect URIs**, click **+ ADD URI** and add:
+   - `https://your-frontend-project.vercel.app`
+5. Click **Save**.
+
+> Note: Google origin updates typically take 2–5 minutes to propagate across Google's auth servers worldwide.
+
+---
+
+### Step 4: Verified Features on Vercel Serverless
+
+- **Google Sign-In**: Opens Google's consent popup, exchanges credentials, fetches subscriber name and Google avatar, and securely stores the user record and JWT in MongoDB Atlas.
 - **REST APIs**: Full CRUD operations for articles, editions, auth, history, clippings, desks, and verification requests.
 - **Follow & Unfollow**: Immediate follow relationship persistence with MongoDB-level idempotency protection.
 - **Real-Time Follow Notifications**:

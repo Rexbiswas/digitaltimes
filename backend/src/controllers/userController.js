@@ -43,6 +43,7 @@ const loginOrRegister = async (req, res, next) => {
     // ─────────────────────────────────────────────────────────────
     if (action === "google") {
       let user = existingUser;
+      const avatarUrl = req.body.avatar || null;
       if (!user) {
         const generatedUsername = await User.generateUniqueUsername(
           (name && name.trim()) || cleanEmail.split("@")[0]
@@ -51,6 +52,7 @@ const loginOrRegister = async (req, res, next) => {
           name: (name && name.trim()) || cleanEmail.split("@")[0] || "Google Reader",
           username: generatedUsername,
           email: cleanEmail,
+          avatar: avatarUrl,
           role: "reader",
           accountType: "reader",
           isVerified: false,
@@ -59,6 +61,9 @@ const loginOrRegister = async (req, res, next) => {
             theme: "morning",
           },
         });
+      } else if (avatarUrl && !user.avatar) {
+        user.avatar = avatarUrl;
+        await user.save();
       }
 
       const token = generateToken(user._id);
