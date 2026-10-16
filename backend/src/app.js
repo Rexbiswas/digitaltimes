@@ -79,6 +79,14 @@ app.use(async (req, res, next) => {
 });
 
 // 3. API Routes
+app.get("/", (req, res) => {
+  res.status(200).json({
+    service: "The Digital Times Editorial API",
+    status: "online",
+    health: "/api/health"
+  });
+});
+
 // GET /api/health
 app.get("/api/health", (req, res) => {
   const connected = isDbConnected();
