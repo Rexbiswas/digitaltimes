@@ -33,6 +33,8 @@ import {
   Camera,
   Trash2,
   Play,
+  ChevronLeft,
+  AlertCircle,
 } from "lucide-react";
 import { breakingHeadlines } from "@/data/newspaperData";
 import CalendarDateSelector from "./CalendarDateSelector";
@@ -65,6 +67,7 @@ import { initFrontendSocket, getFrontendSocket } from "@/services/socket";
 
 export default function YourTimesDashboard({
   user,
+  initialTab = "yourtimes",
   onLogout,
   onOpenArticle,
   onSaveClipping,
@@ -209,6 +212,27 @@ export default function YourTimesDashboard({
   // Persistent Real Notifications
   const [liveNotifications, setLiveNotifications] = useState([]);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [notificationsPage, setNotificationsPage] = useState(1);
+  const [notificationsTotalPages, setNotificationsTotalPages] = useState(1);
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState(null);
+  const toastedNotificationIdsRef = useRef(new Set());
+
+  // Helper for human-readable relative broadsheet timestamps
+  const formatRelativeTime = (dateInput) => {
+    if (!dateInput) return "JUST NOW";
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return String(dateInput).toUpperCase();
+    const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (diffSec < 60) return "Just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
 
   // Real Social Following & Instagram-Style Discovery State
   const [discoverUsers, setDiscoverUsers] = useState([]);
@@ -305,14 +329,28 @@ export default function YourTimesDashboard({
   // ─────────────────────────────────────────────────────────────
   // LOAD REAL DATA: NOTIFICATIONS, JOURNALISTS, FOLLOWS & VERIFICATION
   // ─────────────────────────────────────────────────────────────
-  const loadNotifications = async () => {
+  const loadNotifications = async (page = 1) => {
+    setIsNotificationsLoading(true);
+    setNotificationsError(null);
     try {
-      const res = await fetchNotificationsApi({ limit: 50 });
+      const res = await fetchNotificationsApi({ page, limit: 10 });
       if (res && res.success && Array.isArray(res.data)) {
         setLiveNotifications(res.data);
-        setUnreadNotificationsCount(res.unreadCount || res.data.filter((n) => !n.read).length);
+        if (res.unreadCount !== undefined) {
+          setUnreadNotificationsCount(res.unreadCount);
+        } else {
+          setUnreadNotificationsCount(res.data.filter((n) => !n.isRead && !n.read).length);
+        }
+        setNotificationsPage(res.page || page);
+        setNotificationsTotalPages(res.totalPages || 1);
+      } else if (res && res.error) {
+        setNotificationsError(res.error || "Unable to retrieve dispatch notices.");
       }
-    } catch (e) {}
+    } catch (e) {
+      setNotificationsError("Failed to synchronize broadsheet notifications.");
+    } finally {
+      setIsNotificationsLoading(false);
+    }
   };
 
   const loadDiscoverUsers = async (query = socialSearchQuery) => {
@@ -377,7 +415,7 @@ export default function YourTimesDashboard({
 
   useEffect(() => {
     let isMounted = true;
-    loadNotifications();
+    loadNotifications(1);
     loadDiscoverUsers("");
     loadUserFollows();
     loadUserFollowers();
@@ -398,9 +436,37 @@ export default function YourTimesDashboard({
         if (!isMounted) return;
         const notif = payload?.data || payload;
         if (notif) {
-          setLiveNotifications((prev) => [notif, ...prev]);
-          setUnreadNotificationsCount((prev) => prev + 1);
-          toast?.success?.("Broadsheet Alert", notif.title || "New editorial notification received.");
+          const notifId = notif._id || notif.id;
+          setLiveNotifications((prev) => {
+            // Deduplicate incoming socket events
+            if (prev.some((n) => (n._id || n.id) === notifId)) {
+              return prev;
+            }
+            return [notif, ...prev];
+          });
+
+          // Update unread count authoritatively if provided by server, else increment
+          if (typeof notif.unreadCount === "number") {
+            setUnreadNotificationsCount(notif.unreadCount);
+          } else {
+            setUnreadNotificationsCount((prev) => prev + 1);
+          }
+
+          if (notifId && !toastedNotificationIdsRef.current.has(notifId)) {
+            toastedNotificationIdsRef.current.add(notifId);
+            const actorName =
+              notif.actor?.name ||
+              notif.actorName ||
+              notif.metadata?.followerName ||
+              notif.title ||
+              "A subscriber";
+
+            if (notif.type === "NEW_FOLLOWER" || notif.type === "follow") {
+              toast?.success?.("New Follower", notif.message || `${actorName} started following you.`);
+            } else {
+              toast?.success?.("Broadsheet Alert", notif.title || "New editorial notification received.");
+            }
+          }
         }
       };
 
@@ -411,15 +477,87 @@ export default function YourTimesDashboard({
         loadDiscoverUsers(socialSearchQuery);
       };
 
+      const handleSocketReconnect = () => {
+        if (!isMounted) return;
+        console.log("[Broadsheet Real-Time] Synchronizing ledger on socket reconnect...");
+        loadNotifications(1);
+        loadUserFollows();
+        loadUserFollowers();
+      };
+
+      socket.on("connect", handleSocketReconnect);
+      socket.on("reconnect", handleSocketReconnect);
       socket.on("NEW_ARTICLE", handleNewArticle);
-      socket.on("NEW_NOTIFICATION", handleNewNotification);
       socket.on("notification:new", handleNewNotification);
       socket.on("FOLLOW_UPDATED", handleFollowUpdated);
 
+      // ─────────────────────────────────────────────────────────────
+      // SERVERLESS SMART POLLING & SSE FALLBACK (Vercel-Optimized)
+      // Keeps notification badges & ledger real-time without persistent WebSockets
+      // ─────────────────────────────────────────────────────────────
+      let sseSource = null;
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+        if (typeof window !== "undefined" && window.EventSource && token) {
+          const streamUrl = `/api/notifications/stream`;
+          sseSource = new EventSource(streamUrl);
+          sseSource.onmessage = (event) => {
+            if (!isMounted || !event.data) return;
+            try {
+              const notif = JSON.parse(event.data);
+              if (notif && (notif._id || notif.id)) {
+                handleNewNotification(notif);
+              }
+            } catch (e) {}
+          };
+        }
+      } catch (e) {}
+
+      const pollInterval = setInterval(async () => {
+        if (!isMounted || document.visibilityState !== "visible") return;
+        try {
+          const countRes = await fetchUnreadCountApi();
+          if (countRes && typeof countRes.unreadCount === "number") {
+            setUnreadNotificationsCount((prev) => {
+              if (countRes.unreadCount !== prev) {
+                loadNotifications(1);
+                loadUserFollows();
+                loadUserFollowers();
+              }
+              return countRes.unreadCount;
+            });
+          }
+        } catch (e) {}
+      }, 12000);
+
+      const handleWindowFocus = () => {
+        if (!isMounted) return;
+        fetchUnreadCountApi()
+          .then((countRes) => {
+            if (countRes && typeof countRes.unreadCount === "number") {
+              setUnreadNotificationsCount((prev) => {
+                if (countRes.unreadCount !== prev) {
+                  loadNotifications(1);
+                  loadUserFollows();
+                  loadUserFollowers();
+                }
+                return countRes.unreadCount;
+              });
+            }
+          })
+          .catch(() => {});
+      };
+
+      window.addEventListener("focus", handleWindowFocus);
+
       return () => {
         isMounted = false;
+        clearInterval(pollInterval);
+        window.removeEventListener("focus", handleWindowFocus);
+        if (sseSource) sseSource.close();
+        socket.off("connect", handleSocketReconnect);
+        socket.off("reconnect", handleSocketReconnect);
         socket.off("NEW_ARTICLE", handleNewArticle);
-        socket.off("NEW_NOTIFICATION", handleNewNotification);
         socket.off("notification:new", handleNewNotification);
         socket.off("FOLLOW_UPDATED", handleFollowUpdated);
       };
@@ -652,47 +790,60 @@ export default function YourTimesDashboard({
     e?.stopPropagation?.();
     const id = notif._id || notif.id;
     setLiveNotifications((prev) =>
-      prev.map((n) => ((n._id || n.id) === id ? { ...n, read: true, unread: false } : n))
+      prev.map((n) =>
+        (n._id || n.id) === id ? { ...n, isRead: true, read: true, unread: false } : n
+      )
     );
-    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
     try {
-      await fetch(`/api/notifications/${id}`, {
-        method: "PATCH",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await markNotificationReadApi(id);
+      if (res && res.unreadCount !== undefined) {
+        setUnreadNotificationsCount(res.unreadCount);
+      } else {
+        setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
+      }
     } catch (err) {}
   };
 
   const handleMarkAllNotificationsRead = async () => {
     setLiveNotifications((prev) =>
-      prev.map((n) => ({ ...n, read: true, unread: false }))
+      prev.map((n) => ({ ...n, isRead: true, read: true, unread: false }))
     );
-    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
+    setUnreadNotificationsCount(0);
     try {
-      await fetch("/api/notifications/mark-all-read", {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await markAllNotificationsReadApi();
+      if (res && res.unreadCount !== undefined) {
+        setUnreadNotificationsCount(res.unreadCount);
+      }
     } catch (err) {}
-    toast?.success?.("Notifications Cleared", "All dispatches marked as read.");
+    toast?.success?.("Notifications Cleared", "All broadsheet dispatches marked as read.");
   };
 
   const handleDismissNotification = async (e, notif) => {
     e?.stopPropagation?.();
     const id = notif._id || notif.id;
     setLiveNotifications((prev) => prev.filter((n) => (n._id || n.id) !== id));
-    const token = typeof window !== "undefined" ? localStorage.getItem("times_auth_token") : null;
     try {
-      await fetch(`/api/notifications/${id}`, {
-        method: "DELETE",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await deleteNotificationApi(id);
+      if (res && res.unreadCount !== undefined) {
+        setUnreadNotificationsCount(res.unreadCount);
+      }
     } catch (err) {}
-    toast?.success?.("Notification Dismissed", "Alert removed from your feed.");
+    toast?.success?.("Notification Dismissed", "Alert removed from your broadsheet feed.");
   };
 
-  const handleOpenNotificationStory = (notif) => {
+  const handleOpenNotificationItem = (notif) => {
     handleMarkNotificationRead(null, notif);
+    if (notif.type === "NEW_FOLLOWER" || notif.type === "follow") {
+      const actorUsername =
+        notif.actor?.username ||
+        notif.metadata?.followerUsername ||
+        notif.actorUsername ||
+        notif.actor?._id;
+      if (actorUsername) {
+        handleOpenUserProfile(actorUsername);
+      }
+      return;
+    }
     const story = notif.story || {
       id: notif.articleId || notif.id,
       headline: notif.title,
@@ -701,6 +852,7 @@ export default function YourTimesDashboard({
     };
     handleArticleClick(story);
   };
+  const handleOpenNotificationStory = handleOpenNotificationItem;
 
   // Live stories loaded dynamically from NewsAPI / backend server
   const [liveStories, setLiveStories] = useState([]);
@@ -1307,9 +1459,9 @@ export default function YourTimesDashboard({
                 >
                   <Bell className="w-3.5 h-3.5" />
                   <span>Alerts</span>
-                  {liveNotifications.filter((n) => n.unread).length > 0 && (
+                  {unreadNotificationsCount > 0 && (
                     <span className="bg-[#9F3028] text-[#E8DFC8] text-[9px] font-bold px-1.5 rounded-full">
-                      {liveNotifications.filter((n) => n.unread).length}
+                      {unreadNotificationsCount}
                     </span>
                   )}
                 </button>
@@ -1462,7 +1614,7 @@ export default function YourTimesDashboard({
                 {/* Notifications */}
                 <button
                   onClick={() => setActiveTab("notifications")}
-                  aria-label={`Notifications (${liveNotifications.filter((n) => n.unread).length})`}
+                  aria-label={`Notifications (${unreadNotificationsCount})`}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative ${
                     activeTab === "notifications"
                       ? "bg-[#201E19] text-[#E8DFC8] shadow-xs"
@@ -1470,16 +1622,16 @@ export default function YourTimesDashboard({
                   }`}
                 >
                   <Bell className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  {liveNotifications.filter((n) => n.unread).length > 0 && (
+                  {unreadNotificationsCount > 0 && (
                     <span className="absolute top-1 right-1 bg-[#9F3028] text-[#E8DFC8] text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center animate-pulse">
-                      {liveNotifications.filter((n) => n.unread).length}
+                      {unreadNotificationsCount}
                     </span>
                   )}
                   <div className="hidden md:flex absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-[#201E19] text-[#E8DFC8] text-xs font-serif rounded-lg shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none translate-x-1 group-hover:translate-x-0 transition-all duration-150 z-50 items-center gap-2 border border-[#333333]">
                     <span className="font-semibold">Live Alerts</span>
-                    {liveNotifications.filter((n) => n.unread).length > 0 && (
+                    {unreadNotificationsCount > 0 && (
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#9F3028] text-[#E8DFC8]">
-                        {liveNotifications.filter((n) => n.unread).length} new
+                        {unreadNotificationsCount} new
                       </span>
                     )}
                     <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#766E5F]" />
@@ -1671,7 +1823,7 @@ export default function YourTimesDashboard({
                   {/* Notifications */}
                   <button
                     onClick={() => setActiveTab("notifications")}
-                    title={`Notifications (${liveNotifications.filter((n) => n.unread).length})`}
+                    title={`Notifications (${unreadNotificationsCount})`}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer group relative hover:translate-x-0.5 ${
                       activeTab === "notifications"
                         ? "bg-[#201E19] text-[#E8DFC8] font-semibold shadow-md shadow-black/10 scale-[1.01]"
@@ -1680,9 +1832,9 @@ export default function YourTimesDashboard({
                   >
                     <Bell className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
                     <span className="truncate">Notifications</span>
-                    {liveNotifications.filter((n) => n.unread).length > 0 && (
+                    {unreadNotificationsCount > 0 && (
                       <span className="ml-auto bg-[#9F3028] text-[#E8DFC8] text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-pulse">
-                        {liveNotifications.filter((n) => n.unread).length}
+                        {unreadNotificationsCount}
                       </span>
                     )}
                   </button>
@@ -3088,105 +3240,268 @@ export default function YourTimesDashboard({
             </div>
           )}
 
-          {/* TAB 5: NOTIFICATIONS */}
+          {/* TAB 5: NOTIFICATIONS (Instagram-Style Broadsheet Ledger) */}
           {activeTab === "notifications" && (
             <div className="flex flex-col gap-6">
               <div className="border-b border-[#766E5F]/15 pb-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="font-serif font-bold text-3xl text-[#201E19]">Live Notifications</h2>
-                    {liveNotifications.filter((n) => n.unread || !n.read).length > 0 && (
+                    {unreadNotificationsCount > 0 && (
                       <span className="text-xs font-mono font-bold bg-[#9F3028] text-[#E8DFC8] px-2 py-0.5 rounded-full">
-                        {liveNotifications.filter((n) => n.unread || !n.read).length} new
+                        {unreadNotificationsCount} new
                       </span>
                     )}
                   </div>
                   <p className="text-xs font-mono text-[#666666] uppercase mt-1">
-                    Real-time alerts, market triggers and newsroom dispatches
+                    Subscriber activity, real-time follow alerts, and editorial dispatches
                   </p>
                 </div>
-                <button
-                  onClick={handleMarkAllNotificationsRead}
-                  className="text-xs font-mono text-[#9F3028] hover:underline cursor-pointer"
-                >
-                  Mark all as read
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => loadNotifications(notificationsPage)}
+                    title="Refresh dispatches"
+                    className="p-1.5 text-[#766E5F] hover:text-[#201E19] hover:bg-[#766E5F]/10 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isNotificationsLoading ? "animate-spin" : ""}`} />
+                  </button>
+                  {liveNotifications.length > 0 && (
+                    <button
+                      onClick={handleMarkAllNotificationsRead}
+                      className="text-xs font-mono text-[#9F3028] hover:underline cursor-pointer font-bold"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {liveNotifications.length === 0 ? (
-                <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-8 text-center">
-                  <Bell className="w-8 h-8 text-[#888888] mx-auto mb-2 opacity-50" />
-                  <p className="font-serif text-lg text-[#39352D]">No notifications right now</p>
-                  <p className="text-xs text-[#777777] font-mono mt-1">
-                    Editorial dispatches and breaking alerts will appear here as they are published.
+              {/* 1. Loading Skeletons */}
+              {isNotificationsLoading && liveNotifications.length === 0 ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div
+                      key={i}
+                      className="bg-[#EFE8D5] border border-[#766E5F]/15 rounded-xl p-4 flex items-center justify-between gap-4 animate-pulse"
+                    >
+                      <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-[#766E5F]/20 shrink-0" />
+                        <div className="space-y-2 flex-1 min-w-0">
+                          <div className="h-3.5 bg-[#766E5F]/25 rounded w-1/3" />
+                          <div className="h-3 bg-[#766E5F]/15 rounded w-1/2" />
+                        </div>
+                      </div>
+                      <div className="h-6 w-20 bg-[#766E5F]/20 rounded-md shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              ) : notificationsError ? (
+                /* 2. Error State With Working Retry */
+                <div className="bg-[#EFE8D5] border border-[#9F3028]/30 rounded-xl p-8 text-center space-y-3">
+                  <div className="w-10 h-10 rounded-full bg-[#9F3028]/10 text-[#9F3028] flex items-center justify-center mx-auto">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-serif font-bold text-lg text-[#201E19]">Dispatch Wire Disrupted</h3>
+                  <p className="text-xs font-mono text-[#666666] max-w-md mx-auto">{notificationsError}</p>
+                  <button
+                    onClick={() => loadNotifications(notificationsPage)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#201E19] text-[#E8DFC8] rounded-lg text-xs font-mono font-bold hover:bg-[#333333] transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry Transmission</span>
+                  </button>
+                </div>
+              ) : liveNotifications.length === 0 ? (
+                /* 3. Editorial Empty State */
+                <div className="bg-[#EFE8D5] border border-dashed border-[#766E5F]/30 rounded-xl p-10 text-center">
+                  <Bell className="w-10 h-10 text-[#888888] mx-auto mb-3 opacity-40" />
+                  <p className="font-serif text-xl font-bold text-[#39352D]">Broadsheet Ledger Is Clear</p>
+                  <p className="text-xs text-[#777777] font-mono mt-1.5 max-w-sm mx-auto">
+                    You have no unread dispatches. When fellow subscribers follow your account or breaking wire bulletins arrive, they will appear here in real-time.
                   </p>
                 </div>
               ) : (
+                /* 4. Notification History List */
                 <div className="space-y-3">
                   {liveNotifications.map((notif) => {
-                    const isUnread = notif.unread !== undefined ? notif.unread : !notif.read;
+                    const isUnread =
+                      notif.isRead !== undefined ? !notif.isRead : notif.read !== undefined ? !notif.read : !notif.read;
+                    const isFollowType =
+                      notif.type === "NEW_FOLLOWER" || notif.type === "follow";
+
+                    const actorName =
+                      notif.actor?.name ||
+                      notif.metadata?.followerName ||
+                      notif.actorName ||
+                      (isFollowType ? "A subscriber" : "Broadsheet Newsroom");
+
+                    const actorUsername =
+                      notif.actor?.username ||
+                      notif.metadata?.followerUsername ||
+                      notif.actorUsername ||
+                      "";
+
+                    const actorAvatar =
+                      notif.actor?.avatar ||
+                      notif.metadata?.followerAvatar ||
+                      notif.actorAvatar ||
+                      null;
+
+                    const actorVerified =
+                      notif.actor?.isVerified ?? notif.metadata?.isVerified ?? false;
+
+                    const actorCategory =
+                      notif.actor?.verification?.category ||
+                      (notif.actor?.accountType === "official_brand" ? "publication" : "journalist");
+
+                    const profileUrl = actorUsername ? `/user/${actorUsername}` : "#";
+
                     return (
                       <div
                         key={notif._id || notif.id}
-                        className={`bg-[#EFE8D5] border rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-colors ${
-                          isUnread ? "border-[#9F3028]/50 bg-[#FBF6EE]" : "border-[#766E5F]/20"
+                        className={`border rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
+                          isUnread
+                            ? "border-[#9F3028]/40 bg-[#FDF9F2] shadow-xs"
+                            : "border-[#766E5F]/20 bg-[#EFE8D5]/60 hover:bg-[#EFE8D5]"
                         }`}
                       >
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                          {/* Actor Avatar / Icon */}
                           <div
-                            className={`p-2 rounded-lg shrink-0 ${
-                              isUnread ? "bg-[#9F3028] text-white" : "bg-[#201E19]/10 text-[#201E19]"
-                            }`}
+                            onClick={() => {
+                              if (isFollowType && actorUsername) {
+                                handleOpenUserProfile(actorUsername);
+                              } else {
+                                handleOpenNotificationItem(notif);
+                              }
+                            }}
+                            className="relative shrink-0 cursor-pointer group"
+                            title={actorUsername ? `View @${actorUsername}'s profile` : ""}
                           >
-                            <Bell className="w-4 h-4" />
+                            {actorAvatar ? (
+                              <img
+                                src={actorAvatar}
+                                alt={actorName}
+                                className="w-10 h-10 rounded-full object-cover border border-[#766E5F]/30 ring-2 ring-transparent group-hover:ring-[#9F3028]/40 transition-all"
+                              />
+                            ) : (
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-serif font-bold text-sm border border-[#766E5F]/30 transition-transform group-hover:scale-105 ${
+                                  isFollowType
+                                    ? "bg-[#201E19] text-[#E8DFC8]"
+                                    : isUnread
+                                    ? "bg-[#9F3028] text-white"
+                                    : "bg-[#201E19]/10 text-[#201E19]"
+                                }`}
+                              >
+                                {isFollowType ? (
+                                  (actorName[0] || "U").toUpperCase()
+                                ) : (
+                                  <Bell className="w-4 h-4" />
+                                )}
+                              </div>
+                            )}
+                            {isFollowType && (
+                              <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#9F3028] text-white flex items-center justify-center text-[8px] border border-white">
+                                <Users className="w-2.5 h-2.5" />
+                              </div>
+                            )}
                           </div>
+
+                          {/* Message Body & Metadata */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <span className="text-[10px] font-mono font-bold uppercase bg-[#201E19] text-white px-1.5 py-0.2 rounded">
-                                {notif.desk || "NEWSROOM"}
+                                {isFollowType ? "NEW FOLLOWER" : notif.desk || "NEWSROOM"}
                               </span>
-                              <span className="text-[11px] font-mono text-[#777777]">{notif.time || "RECENT"}</span>
+                              <span className="text-[11px] font-mono text-[#777777] flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-[#888888]" />
+                                {formatRelativeTime(notif.createdAt || notif.time)}
+                              </span>
                               {isUnread && (
-                                <span className="text-[9px] font-mono font-bold text-[#9F3028] uppercase tracking-wider">
+                                <span className="text-[9px] font-mono font-bold text-[#9F3028] uppercase tracking-wider bg-[#9F3028]/10 px-1.5 py-0.2 rounded">
                                   ● UNREAD
                                 </span>
                               )}
                             </div>
-                            <h4
-                              onClick={() => handleOpenNotificationStory(notif)}
-                              className="text-sm font-serif font-semibold text-[#201E19] hover:text-[#9F3028] transition-colors cursor-pointer"
-                            >
-                              {notif.title}
-                            </h4>
-                            {notif.message && (
-                              <p className="text-xs text-[#666666] font-serif line-clamp-2 mt-0.5">
-                                {notif.message}
-                              </p>
-                            )}
+
+                            {/* Headline / Actor Link */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isFollowType ? (
+                                <a
+                                  href={profileUrl}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    if (actorUsername) handleOpenUserProfile(actorUsername);
+                                  }}
+                                  className="text-sm font-serif font-bold text-[#201E19] hover:text-[#9F3028] transition-colors cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <span>{actorName}</span>
+                                  {actorVerified && (
+                                    <VerifiedBadge category={actorCategory} size="sm" />
+                                  )}
+                                  {actorUsername && (
+                                    <span className="text-xs font-mono font-normal text-[#666666]">
+                                      @{actorUsername}
+                                    </span>
+                                  )}
+                                </a>
+                              ) : (
+                                <h4
+                                  onClick={() => handleOpenNotificationItem(notif)}
+                                  className="text-sm font-serif font-semibold text-[#201E19] hover:text-[#9F3028] transition-colors cursor-pointer"
+                                >
+                                  {notif.title}
+                                </h4>
+                              )}
+                            </div>
+
+                            {/* Follow notification message text */}
+                            <p className="text-xs text-[#555555] font-serif mt-0.5">
+                              {notif.message || (isFollowType ? `${actorName} started following you.` : "")}
+                            </p>
                           </div>
                         </div>
 
+                        {/* Interactive Action Controls */}
                         <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenNotificationStory(notif)}
-                            className="text-[11px] font-mono text-[#9F3028] hover:underline font-bold uppercase cursor-pointer"
-                          >
-                            Read
-                          </button>
+                          {isFollowType ? (
+                            <a
+                              href={profileUrl}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleMarkNotificationRead(e, notif);
+                                if (actorUsername) handleOpenUserProfile(actorUsername);
+                              }}
+                              className="text-[11px] font-mono text-[#9F3028] hover:underline font-bold uppercase cursor-pointer px-2 py-1 rounded bg-[#9F3028]/10 hover:bg-[#9F3028]/20 transition-colors inline-flex items-center gap-1"
+                            >
+                              <span>View Profile</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNotificationItem(notif)}
+                              className="text-[11px] font-mono text-[#9F3028] hover:underline font-bold uppercase cursor-pointer px-2 py-1 rounded bg-[#9F3028]/10 hover:bg-[#9F3028]/20 transition-colors"
+                            >
+                              Read Dispatch
+                            </button>
+                          )}
+
                           {isUnread && (
                             <button
                               type="button"
                               onClick={(e) => handleMarkNotificationRead(e, notif)}
-                              className="text-[11px] font-mono text-[#39352D] hover:text-[#201E19] cursor-pointer"
+                              className="text-[11px] font-mono text-[#39352D] hover:text-[#201E19] px-2 py-1 rounded border border-[#766E5F]/20 hover:bg-[#EAE4D6] transition-colors cursor-pointer"
                             >
                               Mark read
                             </button>
                           )}
+
                           <button
                             type="button"
                             onClick={(e) => handleDismissNotification(e, notif)}
-                            className="p-1 text-[#888888] hover:text-[#9F3028] cursor-pointer transition-colors"
+                            className="p-1.5 text-[#888888] hover:text-[#9F3028] rounded-md hover:bg-[#766E5F]/10 cursor-pointer transition-colors"
                             title="Dismiss notification"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -3195,6 +3510,31 @@ export default function YourTimesDashboard({
                       </div>
                     );
                   })}
+
+                  {/* 5. Pagination Controls */}
+                  {notificationsTotalPages > 1 && (
+                    <div className="flex items-center justify-between border-t border-[#766E5F]/15 pt-4 mt-2">
+                      <button
+                        disabled={notificationsPage <= 1 || isNotificationsLoading}
+                        onClick={() => loadNotifications(notificationsPage - 1)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono border border-[#766E5F]/20 rounded-lg text-[#39352D] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#EAE4D6] transition-colors cursor-pointer"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Previous</span>
+                      </button>
+                      <span className="text-xs font-mono text-[#666666]">
+                        Page {notificationsPage} of {notificationsTotalPages}
+                      </span>
+                      <button
+                        disabled={notificationsPage >= notificationsTotalPages || isNotificationsLoading}
+                        onClick={() => loadNotifications(notificationsPage + 1)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono border border-[#766E5F]/20 rounded-lg text-[#39352D] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#EAE4D6] transition-colors cursor-pointer"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

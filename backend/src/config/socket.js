@@ -148,22 +148,31 @@ const emitEditionUpdated = (edition) => {
   io.emit("EDITION_UPDATED", payload);
 };
 
+const notificationEmitter = require("../services/notificationEmitter");
+
 const emitNotification = (notification) => {
+  try {
+    notificationEmitter.emit("notification", notification);
+  } catch (e) {}
+
   if (!io) return;
 
   const payload = createEventPayload("NEW_NOTIFICATION", notification);
+  const targetId = notification.recipient
+    ? (notification.recipient._id || notification.recipient).toString()
+    : notification.user
+    ? (notification.user._id || notification.user).toString()
+    : null;
 
-  if (notification.user) {
-    // Deliver to authenticated user's private room
-    const targetRoom = `user:${notification.user.toString()}`;
-    io.to(targetRoom).emit("NEW_NOTIFICATION", payload);
+  if (targetId) {
+    // Deliver exclusively to authenticated user's private room
+    const targetRoom = `user:${targetId}`;
     io.to(targetRoom).emit("notification:new", notification);
-    io.to(targetRoom).emit("NOTIFICATION", notification);
+    io.to(targetRoom).emit("NEW_NOTIFICATION", payload);
   } else {
-    // Global broadcast notification
-    io.emit("NEW_NOTIFICATION", payload);
+    // Global broadcast notification (for breaking broadsheet news)
     io.emit("notification:new", notification);
-    io.emit("NOTIFICATION", notification);
+    io.emit("NEW_NOTIFICATION", payload);
   }
 };
 

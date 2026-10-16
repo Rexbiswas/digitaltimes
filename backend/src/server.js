@@ -1,125 +1,18 @@
 const http = require("http");
-const express = require("express");
-const helmet = require("helmet");
-const cors = require("cors");
+const app = require("./app");
 const env = require("./config/env");
 const { connectDB, isDbConnected, closeDB } = require("./config/db");
 const { initSocket } = require("./config/socket");
-const errorHandler = require("./middleware/errorHandler");
-const { apiLimiter } = require("./middleware/rateLimiter");
-
-// Routes
-const articleRoutes = require("./routes/articleRoutes");
-const editionRoutes = require("./routes/editionRoutes");
-const ingestionRoutes = require("./routes/ingestionRoutes");
-const searchRoutes = require("./routes/searchRoutes");
-const userRoutes = require("./routes/userRoutes");
-const adminRoutes = require("./routes/adminRoutes");
-const notificationRoutes = require("./routes/notificationRoutes");
-const followRoutes = require("./routes/followRoutes");
-const feedRoutes = require("./routes/feedRoutes");
-const verificationRoutes = require("./routes/verificationRoutes");
-
-// Controllers for root endpoints
-const {
-  getTrendingArticles,
-  getLiveDispatches,
-} = require("./controllers/articleController");
-const {
-  getJournalists,
-  getJournalistFollowers,
-  getDeskFollowers,
-} = require("./controllers/followController");
-
-// Broadsheet Scheduler & Seeding
 const { startCronScheduler } = require("./services/scheduler/scheduler");
 const { seedInitialData } = require("./utils/seedData");
 const { ensureOfficialAccount } = require("./services/officialAccount");
 
-const app = express();
 const httpServer = http.createServer(app);
 
-// 1. Security & Core Middleware
-app.use(
-  helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-  })
-);
-
-app.use(
-  cors({
-    origin: [
-      env.FRONTEND_URL,
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-    ],
-    credentials: true,
-  })
-);
-
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
-app.use("/api", apiLimiter);
-
-// 2. Initialize Real-Time WebSockets
+// Initialize Real-Time WebSockets
 const io = initSocket(httpServer);
 
-// 3. API Routes & Real-Time Handlers
-// GET /api/health
-app.get("/api/health", (req, res) => {
-  const connected = isDbConnected();
-
-  if (connected) {
-    return res.status(200).json({
-      success: true,
-      service: "digitaltimes-backend",
-      database: "connected",
-      timestamp: new Date().toISOString(),
-    });
-  } else {
-    return res.status(200).json({
-      success: false,
-      service: "digitaltimes-backend",
-      database: "disconnected",
-      timestamp: new Date().toISOString(),
-    });
-  }
-});
-
-// Direct top-level editorial endpoints specified in prompt
-app.get("/api/trending", getTrendingArticles);
-app.get("/api/newsroom/live", getLiveDispatches);
-
-// API Resource Routers
-app.use("/api/articles", articleRoutes);
-app.use("/api/editions", editionRoutes);
-app.use("/api/ingestion", ingestionRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/admin", adminRoutes);
-
-// Social, Feed & Profile Verification Routers
-app.get("/api/journalists", getJournalists);
-app.get("/api/journalists/:id/followers", getJournalistFollowers);
-app.get("/api/desks/:id/followers", getDeskFollowers);
-app.use("/api/follows", followRoutes);
-app.use("/api/feed", feedRoutes);
-app.use("/api/verification", verificationRoutes);
-
-// Centralized 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Endpoint ${req.method} ${req.originalUrl} not found in Digital Times API.`,
-  });
-});
-
-// Centralized Error Handling
-app.use(errorHandler);
-
-// 4. Server Lifecycle & Boot
+// Server Lifecycle & Boot
 const startServer = async () => {
   try {
     const dbOk = await connectDB();
@@ -162,6 +55,9 @@ const gracefulShutdown = async (signal) => {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-startServer();
+// Only start HTTP listener if executed directly (not in Vercel serverless runtime)
+if (require.main === module) {
+  startServer();
+}
 
-module.exports = { app, httpServer };
+module.exports = { app, httpServer, io };

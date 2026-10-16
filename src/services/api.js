@@ -384,23 +384,48 @@ export async function fetchPersonalizedFeedApi({ desk, cursor, limit = 20 } = {}
   }
 }
 
+export async function followUserApi(userId) {
+  try {
+    const res = await fetch(`${API_BASE}/follows/${encodeURIComponent(userId)}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+export async function unfollowUserApi(userId) {
+  try {
+    const res = await fetch(`${API_BASE}/follows/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // PERSISTENT NOTIFICATIONS APIS
 // ─────────────────────────────────────────────────────────────
-export async function fetchNotificationsApi({ unreadOnly = false, limit = 50 } = {}) {
+export async function fetchNotificationsApi({ unreadOnly = false, page = 1, limit = 20 } = {}) {
   try {
     const params = new URLSearchParams();
     if (unreadOnly) params.append("unreadOnly", "true");
+    params.append("page", page.toString());
     params.append("limit", limit.toString());
 
     const res = await fetch(`${API_BASE}/notifications?${params.toString()}`, {
       headers: getAuthHeaders(),
       cache: "no-store",
     });
-    if (!res.ok) return { success: false, data: [], unreadCount: 0 };
+    if (!res.ok) return { success: false, data: [], unreadCount: 0, total: 0, totalPages: 1 };
     return await res.json();
   } catch (err) {
-    return { success: false, data: [], unreadCount: 0 };
+    return { success: false, data: [], unreadCount: 0, total: 0, totalPages: 1, error: err.message };
   }
 }
 

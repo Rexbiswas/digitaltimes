@@ -7,6 +7,7 @@ const {
   markNotificationRead,
   markAllNotificationsRead,
   deleteNotification,
+  streamNotifications,
 } = require("../controllers/notificationController");
 const { requireAuth } = require("../middleware/auth");
 
@@ -18,12 +19,14 @@ const optionalAuth = (req, res, next) => {
 };
 
 // Endpoints
+router.get("/stream", optionalAuth, streamNotifications);
 router.get("/unread-count", optionalAuth, getUnreadCount);
-router.patch("/read-all", optionalAuth, markAllNotificationsRead);
-router.post("/mark-all-read", optionalAuth, markAllNotificationsRead);
-router.patch("/:id/read", optionalAuth, markNotificationRead);
-router.delete("/:id", optionalAuth, deleteNotification);
+router.patch("/read-all", requireAuth, markAllNotificationsRead);
+router.post("/mark-all-read", requireAuth, markAllNotificationsRead);
+router.patch("/:notificationId/read", requireAuth, markNotificationRead);
+router.patch("/:id/read", requireAuth, markNotificationRead);
+router.delete("/:id", requireAuth, deleteNotification);
 router.get("/", optionalAuth, getNotifications);
-router.post("/", optionalAuth, createNotification);
+router.post("/", requireAuth, createNotification);
 
 module.exports = router;

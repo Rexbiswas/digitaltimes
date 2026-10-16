@@ -13,14 +13,21 @@ const SOCKET_URL =
 /**
  * Initializes or returns the existing Socket.IO singleton instance
  */
-export function initFrontendSocket() {
+export function initFrontendSocket(forceNew = false) {
   if (typeof window === "undefined") return null;
 
-  if (socketInstance && socketInstance.connected) {
+  const token = localStorage.getItem("times_auth_token");
+
+  if (!forceNew && socketInstance && socketInstance.connected) {
     return socketInstance;
   }
 
-  const token = localStorage.getItem("times_auth_token");
+  if (socketInstance && (forceNew || !socketInstance.connected)) {
+    try {
+      socketInstance.disconnect();
+    } catch (e) {}
+    socketInstance = null;
+  }
 
   socketInstance = io(SOCKET_URL, {
     auth: {
@@ -28,7 +35,7 @@ export function initFrontendSocket() {
     },
     transports: ["websocket", "polling"],
     reconnection: true,
-    reconnectionAttempts: 10,
+    reconnectionAttempts: 15,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 20000,
@@ -41,7 +48,9 @@ export function initFrontendSocket() {
     socketInstance.emit("join:breaking");
 
     // If authenticated, confirm user room
-    const savedUserStr = localStorage.getItem("times_auth_user");
+    const savedUserStr =
+      localStorage.getItem("times_user_session") ||
+      localStorage.getItem("times_auth_user");
     if (savedUserStr) {
       try {
         const u = JSON.parse(savedUserStr);

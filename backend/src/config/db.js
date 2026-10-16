@@ -1,52 +1,58 @@
 const mongoose = require("mongoose");
 const env = require("./env");
 
-let isConnected = false;
+let cachedPromise = null;
 
 const connectDB = async () => {
-  try {
-    mongoose.set("strictQuery", false);
-
-    console.log(`[Database] Attempting connection to MongoDB at: ${env.MONGODB_URI}...`);
-    
-    // Connect with a 10-second timeout for reliable MongoDB Atlas cloud handshakes
-    await mongoose.connect(env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
-    });
-
-    isConnected = true;
-    console.log(`[Database] MongoDB connected successfully to: ${mongoose.connection.host}`);
+  // 1. If already connected, reuse existing connection (warm serverless instance)
+  if (mongoose.connection.readyState === 1) {
     return true;
-  } catch (err) {
-    console.warn(`[Database] Local MongoDB unavailable (${err.message}). Attempting in-memory MongoDB fallback...`);
-    try {
-      const { MongoMemoryServer } = require("mongodb-memory-server");
-      mongod = await MongoMemoryServer.create();
-      const uri = mongod.getUri();
-      await mongoose.connect(uri);
-      isConnected = true;
-      console.log(`[Database] In-memory MongoDB connected successfully at ${uri}`);
-      return true;
-    } catch (memErr) {
-      isConnected = false;
-      console.warn(`[Database] In-memory DB unavailable (${memErr.message}). Starting backend in standby/fallback mode.`);
-      return false;
-    }
   }
+
+  // 2. If connection is already in progress, wait for it
+  if (cachedPromise) {
+    return cachedPromise;
+  }
+
+  mongoose.set("strictQuery", false);
+
+  cachedPromise = (async () => {
+    try {
+      console.log(`[Database] Connecting to MongoDB Atlas (${env.MONGODB_URI ? "URI defined" : "No URI"})...`);
+      await mongoose.connect(env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 8000,
+        connectTimeoutMS: 8000,
+      });
+      console.log(`[Database] MongoDB connected successfully to: ${mongoose.connection.host}`);
+      return true;
+    } catch (err) {
+      console.warn(`[Database] Atlas connection error: ${err.message}. Attempting fallback...`);
+      try {
+        const { MongoMemoryServer } = require("mongodb-memory-server");
+        const mongod = await MongoMemoryServer.create();
+        const uri = mongod.getUri();
+        await mongoose.connect(uri);
+        console.log(`[Database] In-memory MongoDB connected successfully at ${uri}`);
+        return true;
+      } catch (memErr) {
+        console.warn(`[Database] Fallback unavailable: ${memErr.message}. Running in standby mode.`);
+        cachedPromise = null;
+        return false;
+      }
+    }
+  })();
+
+  return cachedPromise;
 };
 
 const isDbConnected = () => {
-  return isConnected && mongoose.connection.readyState === 1;
+  return mongoose.connection.readyState === 1;
 };
 
 const closeDB = async () => {
   if (mongoose.connection.readyState !== 0) {
     await mongoose.disconnect();
-    isConnected = false;
-  }
-  if (typeof mongod !== "undefined" && mongod) {
-    await mongod.stop();
+    cachedPromise = null;
   }
 };
 

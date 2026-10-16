@@ -35,7 +35,8 @@ router.get("/desks/:id/followers", async (req, res, next) => {
 
 // Authenticated endpoints for follows mutations
 router.post("/", requireAuth, followTarget);
-router.delete("/:id", requireAuth, unfollowTarget);
+router.post("/:userId", requireAuth, followTarget);
+router.delete("/:userId", requireAuth, unfollowTarget);
 router.get("/", requireAuth, getFollows);
 
 module.exports = router;

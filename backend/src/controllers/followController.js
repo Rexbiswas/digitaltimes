@@ -2,29 +2,31 @@ const Follow = require("../models/Follow");
 const Article = require("../models/Article");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
-const { getIO } = require("../config/socket");
+const { getIO, emitNotification } = require("../config/socket");
 
-// POST /api/follows
+// POST /api/follows or POST /api/follows/:userId
 // Follow a user, desk, or verified author
 const followTarget = async (req, res, next) => {
   try {
-    const { targetType = "user", targetId, targetName, targetDesk, targetAvatar } = req.body;
+    const rawTargetId = req.params.userId || req.body.targetId;
+    const targetType = req.params.userId ? "user" : (req.body.targetType || "user");
+    const { targetName, targetDesk, targetAvatar } = req.body;
 
     if (!targetType || !["user", "journalist", "desk"].includes(targetType)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid targetType. Must be 'user' or 'desk'.",
+        message: "Invalid targetType. Must be 'user', 'journalist', or 'desk'.",
       });
     }
 
-    if (!targetId || typeof targetId !== "string" || !targetId.trim()) {
+    if (!rawTargetId || typeof rawTargetId !== "string" || !rawTargetId.trim()) {
       return res.status(400).json({
         success: false,
-        message: "targetId is required.",
+        message: "Target ID is required.",
       });
     }
 
-    const cleanTargetId = targetId.trim();
+    const cleanTargetId = rawTargetId.trim();
 
     // ─────────────────────────────────────────────────────────────
     // 1. USER-TO-USER FOLLOWING FLOW (Instagram Style)
@@ -40,57 +42,29 @@ const followTarget = async (req, res, next) => {
         });
       }
 
-      if (targetUser) {
-        // Prevent users from following themselves
-        if (targetUser._id.toString() === req.user._id.toString()) {
-          return res.status(400).json({
-            success: false,
-            message: "Broadsheet guidelines do not permit following your own subscriber profile.",
-          });
-        }
-
-        // Check if follow already exists
-        const existingFollow = await Follow.findOne({
-          user: req.user._id,
-          targetType: "user",
-          targetId: targetUser._id.toString(),
+      if (!targetUser) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found in broadsheet subscriber registry.",
         });
+      }
 
-        if (existingFollow) {
-          const followerCount = await Follow.countDocuments({
-            targetType: "user",
-            targetId: targetUser._id.toString(),
-          });
-          const followingCount = await Follow.countDocuments({
-            user: req.user._id,
-            targetType: "user",
-          });
-
-          return res.status(200).json({
-            success: true,
-            message: `You are already following @${targetUser.username}.`,
-            data: existingFollow,
-            isFollowing: true,
-            followerCount,
-            followingCount,
-          });
-        }
-
-        // Create follow relationship
-        const newFollow = await Follow.create({
-          user: req.user._id,
-          targetType: "user",
-          targetId: targetUser._id.toString(),
-          followedUser: targetUser._id,
-          targetName: targetUser.name,
-          targetAvatar: targetUser.avatar || null,
-          targetVerified: !!targetUser.isVerified,
-          metadata: {
-            username: targetUser.username,
-            accountType: targetUser.accountType || "reader",
-          },
+      // Prevent users from following themselves
+      if (targetUser._id.toString() === req.user._id.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: "Broadsheet guidelines do not permit following your own subscriber profile.",
         });
+      }
 
+      // Check if follow already exists (Idempotent check)
+      const existingFollow = await Follow.findOne({
+        user: req.user._id,
+        targetType: "user",
+        targetId: targetUser._id.toString(),
+      });
+
+      if (existingFollow) {
         const followerCount = await Follow.countDocuments({
           targetType: "user",
           targetId: targetUser._id.toString(),
@@ -100,75 +74,124 @@ const followTarget = async (req, res, next) => {
           targetType: "user",
         });
 
-        // Persist notification for the followed user
-        let notifRecord = null;
-        try {
-          notifRecord = await Notification.create({
-            recipient: targetUser._id,
-            type: "follow",
-            title: "New Follower",
-            message: `${req.user.name} (@${req.user.username}) started following you.`,
-            link: `/user/${req.user.username}`,
-            idempotencyKey: `follow_${req.user._id.toString()}_${targetUser._id.toString()}`,
-            metadata: {
-              followerId: req.user._id,
-              followerUsername: req.user.username,
-              followerName: req.user.name,
-              followerAvatar: req.user.avatar,
-            },
-          });
-        } catch (e) {
-          // Ignore idempotency key duplicates
-        }
-
-        // Real-time socket events
-        try {
-          const io = getIO();
-          if (io) {
-            // To follower
-            io.to(`user:${req.user._id.toString()}`).emit("FOLLOW_UPDATED", {
-              action: "follow",
-              targetType: "user",
-              targetId: targetUser._id.toString(),
-              targetName: targetUser.name,
-              username: targetUser.username,
-              followerCount,
-              followingCount,
-              isFollowing: true,
-            });
-
-            // To target followed user
-            io.to(`user:${targetUser._id.toString()}`).emit("FOLLOW_UPDATED", {
-              action: "new_follower",
-              targetType: "user",
-              targetId: targetUser._id.toString(),
-              followerCount,
-            });
-
-            if (notifRecord) {
-              io.to(`user:${targetUser._id.toString()}`).emit("NEW_NOTIFICATION", {
-                notification: {
-                  id: notifRecord._id,
-                  type: notifRecord.type,
-                  title: notifRecord.title,
-                  message: notifRecord.message,
-                  link: notifRecord.link,
-                  createdAt: notifRecord.createdAt,
-                },
-              });
-            }
-          }
-        } catch (sockErr) {}
-
-        return res.status(201).json({
+        return res.status(200).json({
           success: true,
-          message: `Now following @${targetUser.username}.`,
-          data: newFollow,
+          message: `You are already following @${targetUser.username}.`,
+          data: existingFollow,
           isFollowing: true,
           followerCount,
           followingCount,
         });
       }
+
+      // Create authoritative follow relationship
+      const newFollow = await Follow.create({
+        user: req.user._id,
+        targetType: "user",
+        targetId: targetUser._id.toString(),
+        followedUser: targetUser._id,
+        targetName: targetUser.name,
+        targetAvatar: targetUser.avatar || null,
+        targetVerified: !!targetUser.isVerified,
+        metadata: {
+          username: targetUser.username,
+          accountType: targetUser.accountType || "reader",
+        },
+      });
+
+      const followerCount = await Follow.countDocuments({
+        targetType: "user",
+        targetId: targetUser._id.toString(),
+      });
+      const followingCount = await Follow.countDocuments({
+        user: req.user._id,
+        targetType: "user",
+      });
+
+      // Persist ONE notification for the followed user
+      let notifRecord = null;
+      try {
+        const idempotencyKey = `follow_${req.user._id.toString()}_${targetUser._id.toString()}_${newFollow._id.toString()}`;
+        notifRecord = await Notification.create({
+          recipient: targetUser._id,
+          user: targetUser._id,
+          actor: req.user._id,
+          type: "NEW_FOLLOWER",
+          entityId: newFollow._id,
+          title: "New Follower",
+          message: `${req.user.name} started following you.`,
+          link: `/user/${req.user.username}`,
+          isRead: false,
+          read: false,
+          idempotencyKey,
+          metadata: {
+            followerId: req.user._id,
+            followerUsername: req.user.username,
+            followerName: req.user.name,
+            followerAvatar: req.user.avatar || null,
+          },
+        });
+
+        // Enrich with populated actor and recipient details
+        notifRecord = await Notification.findById(notifRecord._id)
+          .populate("actor", "name username avatar isVerified accountType role")
+          .populate("recipient", "name username avatar")
+          .lean();
+
+        if (notifRecord) {
+          const recipientUnreadCount = await Notification.countDocuments({
+            $and: [
+              { $or: [{ recipient: targetUser._id }, { user: targetUser._id }] },
+              { $or: [{ isRead: false }, { read: false }] },
+            ],
+          });
+          notifRecord.unreadCount = recipientUnreadCount;
+        }
+      } catch (e) {
+        console.error("[Follow] Failed to persist follow notification:", e);
+      }
+
+      // Real-time socket events after persistence succeeds
+      try {
+        const io = getIO();
+        if (io) {
+          // Emit authoritative follow update to follower
+          io.to(`user:${req.user._id.toString()}`).emit("FOLLOW_UPDATED", {
+            action: "follow",
+            targetType: "user",
+            targetId: targetUser._id.toString(),
+            targetName: targetUser.name,
+            username: targetUser.username,
+            followerCount,
+            followingCount,
+            isFollowing: true,
+          });
+
+          // Emit authoritative follower count update to followed user
+          io.to(`user:${targetUser._id.toString()}`).emit("FOLLOW_UPDATED", {
+            action: "new_follower",
+            targetType: "user",
+            targetId: targetUser._id.toString(),
+            followerCount,
+          });
+
+          // Emit real-time notification to the followed recipient's private room
+          if (notifRecord) {
+            emitNotification(notifRecord);
+          }
+        }
+      } catch (sockErr) {
+        console.error("[Follow] Socket emission error:", sockErr);
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: `Now following @${targetUser.username}.`,
+        data: newFollow,
+        isFollowing: true,
+        followerCount,
+        followingCount,
+      });
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -243,11 +266,11 @@ const followTarget = async (req, res, next) => {
   }
 };
 
-// DELETE /api/follows/:id
+// DELETE /api/follows/:id or DELETE /api/follows/:userId
 // Unfollow user or desk by ObjectId, username, or targetId
 const unfollowTarget = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = req.params.userId || req.params.id;
     const { targetType } = req.query;
 
     let follow = null;

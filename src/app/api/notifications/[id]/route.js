@@ -7,10 +7,7 @@ export async function PATCH(request, { params }) {
   try {
     const { id } = await params;
     const authHeader = request.headers.get("authorization");
-
-    const endpoint = authHeader
-      ? `${BACKEND_API_URL}/users/notifications/${id}/read`
-      : `${BACKEND_API_URL}/notifications/${id}/read`;
+    const endpoint = `${BACKEND_API_URL}/notifications/${encodeURIComponent(id)}/read`;
 
     const res = await fetch(endpoint, {
       method: "PATCH",
@@ -19,28 +16,21 @@ export async function PATCH(request, { params }) {
       },
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json(data);
-    }
+    const data = await res.json().catch(() => ({}));
+    return NextResponse.json(data, { status: res.status });
   } catch (err) {
-    // fallback
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    success: true,
-    data: { id: "notif-read", read: true },
-  });
 }
 
 export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
     const authHeader = request.headers.get("authorization");
-
-    const endpoint = authHeader
-      ? `${BACKEND_API_URL}/users/notifications/${id}`
-      : `${BACKEND_API_URL}/notifications/${id}`;
+    const endpoint = `${BACKEND_API_URL}/notifications/${encodeURIComponent(id)}`;
 
     const res = await fetch(endpoint, {
       method: "DELETE",
@@ -49,16 +39,12 @@ export async function DELETE(request, { params }) {
       },
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json(data);
-    }
+    const data = await res.json().catch(() => ({}));
+    return NextResponse.json(data, { status: res.status });
   } catch (err) {
-    // fallback
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    success: true,
-    message: "Notification dismissed",
-  });
 }

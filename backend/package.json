@@ -2,7 +2,7 @@
   "name": "digitaltimes-backend",
   "version": "1.0.0",
   "description": "Production-grade backend service for Digital Times editorial broadsheet",
-  "main": "src/server.js",
+  "main": "api/index.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
