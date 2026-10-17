@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { sanitizeArticle } from "@/utils/articlePresenter";
+import { getBackendApiUrl } from "@/utils/backendUrl";
 
-const BACKEND_API_URL =
-  process.env.BACKEND_API_URL || "http://localhost:5000/api";
+const BACKEND_API_URL = getBackendApiUrl();
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);

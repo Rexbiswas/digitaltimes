@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-const BACKEND_API_URL =
-  process.env.BACKEND_API_URL || "http://localhost:5000/api";
+import { getBackendApiUrl } from "@/utils/backendUrl";
 
 // Password regex: minimum 8 characters, at least one uppercase letter, one lowercase letter, and one number
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&#^~_.\-+=[\]{}()]{8,}$/;
@@ -51,7 +50,8 @@ export async function POST(request) {
     }
 
     try {
-      const res = await fetch(`${BACKEND_API_URL}/users/auth`, {
+      const backendUrl = getBackendApiUrl();
+      const res = await fetch(`${backendUrl}/users/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -62,15 +62,20 @@ export async function POST(request) {
       if (res.ok) {
         return NextResponse.json(data);
       } else {
-        // Pass through client validation / authentication errors from backend
-        return NextResponse.json(
-          {
-            success: false,
-            code: data.code || (res.status === 404 ? "USER_NOT_FOUND" : res.status === 409 ? "USER_ALREADY_EXISTS" : "AUTH_ERROR"),
-            message: data.message || "Authentication request failed.",
-          },
-          { status: res.status }
-        );
+        // If the backend returns 404 endpoint not found, fall back to local auth handler instead of blocking user
+        if (res.status === 404 && typeof data?.message === "string" && data.message.includes("not found in Digital Times API")) {
+          console.warn("Backend endpoint not found on proxy, proceeding with resilient auth fallback");
+        } else {
+          // Pass through client validation / authentication errors from backend
+          return NextResponse.json(
+            {
+              success: false,
+              code: data.code || (res.status === 404 ? "USER_NOT_FOUND" : res.status === 409 ? "USER_ALREADY_EXISTS" : "AUTH_ERROR"),
+              message: data.message || "Authentication request failed.",
+            },
+            { status: res.status }
+          );
+        }
       }
     } catch (err) {
       // Backend server unavailable; proceed to local resilient mock fallback

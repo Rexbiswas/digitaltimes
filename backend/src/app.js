@@ -87,8 +87,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// GET /api/health
-app.get("/api/health", (req, res) => {
+// GET /api/health & /health
+app.get(["/api/health", "/health"], (req, res) => {
   const connected = isDbConnected();
   res.status(200).json({
     success: connected,
@@ -100,25 +100,25 @@ app.get("/api/health", (req, res) => {
 });
 
 // Root editorial endpoints
-app.get("/api/trending", getTrendingArticles);
-app.get("/api/newsroom/live", getLiveDispatches);
+app.get(["/api/trending", "/trending"], getTrendingArticles);
+app.get(["/api/newsroom/live", "/newsroom/live"], getLiveDispatches);
 
-// API Resource Routers
-app.use("/api/articles", articleRoutes);
-app.use("/api/editions", editionRoutes);
-app.use("/api/ingestion", ingestionRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/admin", adminRoutes);
+// API Resource Routers (Mounted with and without /api prefix for robust serverless/proxy support)
+app.use(["/api/articles", "/articles"], articleRoutes);
+app.use(["/api/editions", "/editions"], editionRoutes);
+app.use(["/api/ingestion", "/ingestion"], ingestionRoutes);
+app.use(["/api/search", "/search"], searchRoutes);
+app.use(["/api/users", "/users"], userRoutes);
+app.use(["/api/notifications", "/notifications"], notificationRoutes);
+app.use(["/api/admin", "/admin"], adminRoutes);
 
 // Social, Feed & Profile Verification Routers
-app.get("/api/journalists", getJournalists);
-app.get("/api/journalists/:id/followers", getJournalistFollowers);
-app.get("/api/desks/:id/followers", getDeskFollowers);
-app.use("/api/follows", followRoutes);
-app.use("/api/feed", feedRoutes);
-app.use("/api/verification", verificationRoutes);
+app.get(["/api/journalists", "/journalists"], getJournalists);
+app.get(["/api/journalists/:id/followers", "/journalists/:id/followers"], getJournalistFollowers);
+app.get(["/api/desks/:id/followers", "/desks/:id/followers"], getDeskFollowers);
+app.use(["/api/follows", "/follows"], followRoutes);
+app.use(["/api/feed", "/feed"], feedRoutes);
+app.use(["/api/verification", "/verification"], verificationRoutes);
 
 // Centralized 404 handler
 app.use((req, res) => {
