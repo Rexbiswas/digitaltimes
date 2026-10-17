@@ -36,7 +36,7 @@ import {
   ChevronLeft,
   AlertCircle,
 } from "lucide-react";
-import { breakingHeadlines } from "@/data/newspaperData";
+import { breakingHeadlines, allArticles } from "@/data/newspaperData";
 import CalendarDateSelector from "./CalendarDateSelector";
 import { ArticleCardSkeleton, VideoCardSkeleton, SkeletonBlock } from "./skeletons";
 import { useToast } from "@/context/ToastContext";
@@ -932,11 +932,11 @@ export default function YourTimesDashboard({
         const mapped = json.articles.map(mapApiArticle);
         setLiveStories(mapped);
       } else if (json.articles && json.articles.length === 0) {
-        setLiveStories([]);
+        setLiveStories((prev) => (prev && prev.length > 0 ? prev : allArticles.map(mapApiArticle)));
       }
     } catch (err) {
       console.warn("Could not load live articles:", err);
-      setWireError("Telegraph transmission failed to receive incoming dispatches. Check backend connection.");
+      setLiveStories((prev) => (prev && prev.length > 0 ? prev : allArticles.map(mapApiArticle)));
     } finally {
       if (isBackground) {
         setIsSyncingWire(false);

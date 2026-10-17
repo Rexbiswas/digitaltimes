@@ -29,10 +29,33 @@ const getArticles = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
     const skip = (pageNum - 1) * limitNum;
 
-    const [articles, total] = await Promise.all([
+    let [articles, total] = await Promise.all([
       Article.find(query).sort(sort).skip(skip).limit(limitNum).lean(),
       Article.countDocuments(query),
     ]);
+
+    // On serverless or fresh cloud instances: auto-seed initial articles if collection is completely empty
+    if (total === 0 && (!desk && !category && !editionDate && !trending && !breaking)) {
+      try {
+        const overallCount = await Article.countDocuments();
+        if (overallCount === 0) {
+          const { seedInitialData } = require("../utils/seedData");
+          await seedInitialData();
+          [articles, total] = await Promise.all([
+            Article.find(query).sort(sort).skip(skip).limit(limitNum).lean(),
+            Article.countDocuments(query),
+          ]);
+
+          // Also trigger ingestion pipeline in background to fetch fresh RSS dispatches
+          const { runIngestionPipeline } = require("../services/ingestion/ingestionPipeline");
+          runIngestionPipeline({ rebuildEdition: false }).catch((err) => {
+            console.warn("[AutoIngest] Background ingestion failed:", err.message);
+          });
+        }
+      } catch (seedErr) {
+        console.warn("[ArticleController] Auto-seed failed:", seedErr.message);
+      }
+    }
 
     res.json({
       success: true,
