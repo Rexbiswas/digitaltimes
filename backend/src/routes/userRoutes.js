@@ -19,6 +19,10 @@ const {
   recordReadingHistory,
   removeReadingHistoryItem,
   clearReadingHistory,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
+  getBlockStatus,
 } = require("../controllers/userController");
 const {
   getNotifications,
@@ -38,6 +42,13 @@ router.post("/reset-password", resetPassword);
 router.get("/discover", discoverUsers);
 router.get("/profile", requireAuth, getProfile);
 router.patch("/profile", requireAuth, updateProfile);
+
+// Blocking System (Phase 10) - specific routes declared before parameter routes
+router.get("/blocked", requireAuth, getBlockedUsers);
+router.get("/:id/block-status", requireAuth, getBlockStatus);
+router.post("/:id/block", requireAuth, blockUser);
+router.delete("/:id/block", requireAuth, unblockUser);
+
 router.get("/profile/:usernameOrId", getUserProfile);
 router.get("/:id/followers", getUserFollowers);
 router.get("/:id/following", getUserFollowing);

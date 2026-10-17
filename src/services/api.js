@@ -1,5 +1,18 @@
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+// Resolve API base URL dynamically: In deployed environments without NEXT_PUBLIC_API_URL, route through same-origin /api
+function resolveApiBase() {
+  if (typeof window !== "undefined") {
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!isLocalhost && (!envUrl || envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))) {
+      return "/api";
+    }
+  }
+  return (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/+$/, "");
+}
+
+const API_BASE = resolveApiBase();
 
 export async function fetchHealth() {
   try {
@@ -561,6 +574,59 @@ export async function revokeVerificationAdminApi(userId, { reason } = {}) {
     return await res.json();
   } catch (err) {
     return { success: false, message: err.message };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// INSTAGRAM-STYLE USER BLOCKING APIS (Phase 10)
+// ─────────────────────────────────────────────────────────────
+export async function blockUserApi(userId) {
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/block`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, message: err.message || "Could not complete block operation." };
+  }
+}
+
+export async function unblockUserApi(userId) {
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/block`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, message: err.message || "Could not complete unblock operation." };
+  }
+}
+
+export async function fetchBlockedUsersApi() {
+  try {
+    const res = await fetch(`${API_BASE}/users/blocked`, {
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) return { success: false, data: [] };
+    return await res.json();
+  } catch (err) {
+    return { success: false, data: [] };
+  }
+}
+
+export async function fetchBlockStatusApi(userId) {
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/block-status`, {
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) return { success: false, isBlocked: false, hasBlockedYou: false };
+    return await res.json();
+  } catch (err) {
+    return { success: false, isBlocked: false, hasBlockedYou: false };
   }
 }
 

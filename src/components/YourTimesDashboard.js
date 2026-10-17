@@ -35,6 +35,8 @@ import {
   Play,
   ChevronLeft,
   AlertCircle,
+  Ban,
+  Unlock,
 } from "lucide-react";
 import { breakingHeadlines, allArticles } from "@/data/newspaperData";
 import CalendarDateSelector from "./CalendarDateSelector";
@@ -62,6 +64,8 @@ import {
   markAllNotificationsReadApi,
   deleteNotificationApi,
   fetchVerificationStatusApi,
+  fetchBlockedUsersApi,
+  unblockUserApi,
 } from "@/services/api";
 import { initFrontendSocket, getFrontendSocket } from "@/services/socket";
 
@@ -250,6 +254,11 @@ export default function YourTimesDashboard({
   const [isVerificationOpen, setIsVerificationOpen] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState(null);
 
+  // Phase 10: Blocked Subscribers Ledger State
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [isLoadingBlocked, setIsLoadingBlocked] = useState(false);
+  const [unblockingId, setUnblockingId] = useState(null);
+
   // Real-time broadsheet wire updates counter
   const [newDispatchesCount, setNewDispatchesCount] = useState(0);
 
@@ -405,6 +414,38 @@ export default function YourTimesDashboard({
     } catch (e) {}
   };
 
+  const loadBlockedUsers = async () => {
+    setIsLoadingBlocked(true);
+    try {
+      const res = await fetchBlockedUsersApi();
+      if (res && res.success && Array.isArray(res.data)) {
+        setBlockedUsers(res.data);
+      }
+    } catch (e) {
+      console.error("Failed to load blocked subscribers:", e);
+    } finally {
+      setIsLoadingBlocked(false);
+    }
+  };
+
+  const handleUnblockUser = async (userId, username) => {
+    setUnblockingId(userId);
+    try {
+      const res = await unblockUserApi(userId);
+      if (res && res.success) {
+        toast?.success?.("Account Unblocked", `@${username} interactions have been restored.`);
+        setBlockedUsers((prev) => prev.filter((b) => (b.id || b._id) !== userId));
+        loadDiscoverUsers();
+      } else {
+        toast?.error?.("Unblock Failed", res?.error || "Unable to unblock account.");
+      }
+    } catch (e) {
+      toast?.error?.("Error", "Failed to communicate with broadsheet registry.");
+    } finally {
+      setUnblockingId(null);
+    }
+  };
+
   // Debounced search for social discovery
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -414,12 +455,19 @@ export default function YourTimesDashboard({
   }, [socialSearchQuery]);
 
   useEffect(() => {
+    if (activeTab === "settings") {
+      loadBlockedUsers();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     let isMounted = true;
     loadNotifications(1);
     loadDiscoverUsers("");
     loadUserFollows();
     loadUserFollowers();
     loadVerificationStatus();
+    loadBlockedUsers();
 
     // ─────────────────────────────────────────────────────────────
     // REAL-TIME SOCKET.IO CLIENT SUBSCRIPTIONS
@@ -3613,6 +3661,78 @@ export default function YourTimesDashboard({
                       : "Request Verification"}
                   </button>
                 </div>
+
+                {/* Blocked Accounts Ledger (Phase 10: Instagram-Style User Blocking) */}
+                <div className="pt-6 border-t border-[#766E5F]/20 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Ban className="w-4 h-4 text-[#9F3028]" />
+                        <h4 className="font-serif font-bold text-base text-[#201E19]">
+                          Blocked Broadsheet Accounts
+                        </h4>
+                        <span className="text-[10px] font-mono bg-[#9F3028]/15 text-[#9F3028] px-2 py-0.5 rounded font-bold">
+                          {blockedUsers.length} BLOCKED
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#666666] font-mono mt-0.5">
+                        Accounts restricted from discovering your profile, following, or reading private dispatches
+                      </p>
+                    </div>
+                  </div>
+
+                  {isLoadingBlocked ? (
+                    <div className="space-y-2 mt-2">
+                      {[1, 2].map((i) => (
+                        <div key={i} className="h-12 bg-[#DFD6BD] rounded animate-pulse" />
+                      ))}
+                    </div>
+                  ) : blockedUsers.length === 0 ? (
+                    <div className="p-4 bg-[#E8DFC8]/50 border border-[#766E5F]/20 rounded-lg text-xs font-mono text-[#666666] text-center">
+                      No accounts currently blocked. Your broadsheet ledger is clean.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 mt-2">
+                      {blockedUsers.map((bUser) => {
+                        const bId = bUser.id || bUser._id;
+                        return (
+                          <div
+                            key={bId}
+                            className="flex items-center justify-between p-3 bg-[#E8DFC8] border border-[#766E5F]/30 rounded-lg hover:border-[#201E19] transition-all"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-full bg-[#201E19] text-[#E8DFC8] flex items-center justify-center font-serif text-sm font-bold shrink-0">
+                                {bUser.avatar ? (
+                                  <img src={bUser.avatar} alt={bUser.name} className="w-full h-full rounded-full object-cover" />
+                                ) : (
+                                  (bUser.name || "U").charAt(0).toUpperCase()
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-serif font-bold text-sm text-[#201E19] block truncate">
+                                  {bUser.name}
+                                </span>
+                                <span className="text-xs font-mono text-[#666666] block truncate">
+                                  @{bUser.username}
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleUnblockUser(bId, bUser.username)}
+                              disabled={unblockingId === bId}
+                              className="text-xs font-mono font-bold px-3 py-1.5 rounded border border-[#201E19] text-[#201E19] hover:bg-[#201E19] hover:text-[#E8DFC8] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                              <span>{unblockingId === bId ? "Unblocking..." : "Unblock"}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -3776,6 +3896,12 @@ export default function YourTimesDashboard({
         onFollowToggle={() => {
           loadDiscoverUsers();
           loadUserFollows();
+        }}
+        onBlockToggle={() => {
+          loadDiscoverUsers();
+          loadUserFollows();
+          loadUserFollowers();
+          loadBlockedUsers();
         }}
         onDeleteUser={(targetUser) => {
           setIsProfileModalOpen(false);

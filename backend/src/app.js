@@ -67,10 +67,18 @@ app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use("/api", apiLimiter);
 
 // 2. Serverless Database Connection Assurance
+let hasEnsuredOfficial = false;
 app.use(async (req, res, next) => {
   try {
     if (!isDbConnected()) {
       await connectDB();
+    }
+    if (!hasEnsuredOfficial && isDbConnected()) {
+      hasEnsuredOfficial = true;
+      const { ensureOfficialAccount } = require("./services/officialAccount");
+      ensureOfficialAccount().catch((err) => {
+        console.warn("[OfficialAccount] Auto-provision warning:", err.message);
+      });
     }
   } catch (err) {
     console.error("[Database] Serverless connection error:", err);

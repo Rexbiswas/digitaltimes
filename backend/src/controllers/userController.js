@@ -3,6 +3,7 @@ const Article = require("../models/Article");
 const Bookmark = require("../models/Bookmark");
 const ReadingHistory = require("../models/ReadingHistory");
 const Follow = require("../models/Follow");
+const Block = require("../models/Block");
 const jwt = require("jsonwebtoken");
 const env = require("../config/env");
 const { sendPasswordResetEmail } = require("../services/emailService");
@@ -533,6 +534,15 @@ const discoverUsers = async (req, res, next) => {
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
 
+    // Ensure the official brand account exists in MongoDB
+    try {
+      const officialExists = await User.exists({ username: "thedigitaltimes" });
+      if (!officialExists) {
+        const { ensureOfficialAccount } = require("../services/officialAccount");
+        await ensureOfficialAccount();
+      }
+    } catch (e) {}
+
     // Optional auth extraction from Bearer token
     let currentUserId = null;
     const authHeader = req.headers.authorization;
@@ -544,15 +554,24 @@ const discoverUsers = async (req, res, next) => {
     }
 
     const filter = {};
+
+    // Block filtering: exclude accounts blocked by current user, or that blocked current user
     if (currentUserId) {
-      filter._id = { $ne: currentUserId };
+      const blockedRecords = await Block.find({
+        $or: [{ blocker: currentUserId }, { blocked: currentUserId }],
+      }).lean();
+      const excludedUserIds = blockedRecords.map((b) =>
+        b.blocker.toString() === currentUserId.toString() ? b.blocked : b.blocker
+      );
+      filter._id = { $nin: [currentUserId, ...excludedUserIds] };
     }
 
     if (q && typeof q === "string" && q.trim()) {
       const cleanQ = q.trim().replace(/^@/, "");
+      const escaped = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.$or = [
-        { username: { $regex: cleanQ, $options: "i" } },
-        { name: { $regex: cleanQ, $options: "i" } },
+        { username: { $regex: escaped, $options: "i" } },
+        { name: { $regex: escaped, $options: "i" } },
       ];
     }
 
@@ -664,6 +683,18 @@ const getUserProfile = async (req, res, next) => {
       } catch (e) {}
     }
 
+    // Check bidirectional block status
+    let isBlocked = false;
+    let hasBlockedYou = false;
+    if (currentUserId) {
+      const [blockedByMe, blockedByThem] = await Promise.all([
+        Block.exists({ blocker: currentUserId, blocked: user._id }),
+        Block.exists({ blocker: user._id, blocked: currentUserId }),
+      ]);
+      isBlocked = !!blockedByMe;
+      hasBlockedYou = !!blockedByThem;
+    }
+
     const uIdStr = user._id.toString();
     const followerCount = await Follow.countDocuments({
       targetType: "user",
@@ -700,6 +731,9 @@ const getUserProfile = async (req, res, next) => {
         followerCount,
         followingCount,
         isFollowing,
+        isBlocked,
+        hasBlockedYou,
+        canInteract: !isBlocked && !hasBlockedYou,
         createdAt: user.createdAt,
       },
     });
@@ -1159,6 +1193,173 @@ const deleteUser = async (req, res, next) => {
   }
 };
 
+// POST /api/users/:userId/block
+// Block a user, severing follow relationships in both directions
+const blockUser = async (req, res, next) => {
+  try {
+    const rawTargetId = req.params.userId || req.params.id;
+    if (!rawTargetId || !rawTargetId.trim()) {
+      return res.status(400).json({ success: false, message: "Target user ID is required." });
+    }
+
+    const clean = rawTargetId.trim().replace(/^@/, "");
+    let targetUser = null;
+    if (clean.match(/^[0-9a-fA-F]{24}$/)) {
+      targetUser = await User.findById(clean);
+    }
+    if (!targetUser) {
+      targetUser = await User.findOne({ username: clean.toLowerCase() });
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: "Subscriber account not found." });
+    }
+
+    if (targetUser._id.equals(req.user._id)) {
+      return res.status(400).json({ success: false, message: "You cannot block your own profile." });
+    }
+
+    if (targetUser.accountType === "official_brand" || targetUser.username === "thedigitaltimes") {
+      return res.status(403).json({
+        success: false,
+        message: "The official broadsheet voice cannot be blocked.",
+      });
+    }
+
+    // Persist block record idempotently
+    await Block.findOneAndUpdate(
+      { blocker: req.user._id, blocked: targetUser._id },
+      { blocker: req.user._id, blocked: targetUser._id },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    // Sever follow relationships in BOTH directions
+    await Follow.deleteMany({
+      $or: [
+        { user: req.user._id, targetType: "user", targetId: targetUser._id.toString() },
+        { user: targetUser._id, targetType: "user", targetId: req.user._id.toString() },
+      ],
+    });
+
+    res.json({
+      success: true,
+      message: `You have blocked @${targetUser.username}. You will no longer see each other's accounts.`,
+      isBlocked: true,
+      blockedUser: {
+        id: targetUser._id,
+        _id: targetUser._id,
+        username: targetUser.username,
+        name: targetUser.name,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// DELETE /api/users/:userId/block
+// Unblock a user (does not automatically restore prior follows)
+const unblockUser = async (req, res, next) => {
+  try {
+    const rawTargetId = req.params.userId || req.params.id;
+    if (!rawTargetId || !rawTargetId.trim()) {
+      return res.status(400).json({ success: false, message: "Target user ID is required." });
+    }
+
+    const clean = rawTargetId.trim().replace(/^@/, "");
+    let targetUser = null;
+    if (clean.match(/^[0-9a-fA-F]{24}$/)) {
+      targetUser = await User.findById(clean);
+    }
+    if (!targetUser) {
+      targetUser = await User.findOne({ username: clean.toLowerCase() });
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: "Subscriber account not found." });
+    }
+
+    await Block.findOneAndDelete({ blocker: req.user._id, blocked: targetUser._id });
+
+    res.json({
+      success: true,
+      message: `Unblocked @${targetUser.username}.`,
+      isBlocked: false,
+      unblockedId: targetUser._id,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/users/blocked
+// Get list of users blocked by the authenticated user
+const getBlockedUsers = async (req, res, next) => {
+  try {
+    const blocks = await Block.find({ blocker: req.user._id })
+      .populate("blocked", "name username avatar bio isVerified verification accountType")
+      .sort("-createdAt")
+      .lean();
+
+    const data = blocks
+      .filter((b) => b.blocked)
+      .map((b) => ({
+        id: b.blocked._id,
+        _id: b.blocked._id,
+        name: b.blocked.name,
+        username: b.blocked.username,
+        avatar: b.blocked.avatar || null,
+        bio: b.blocked.bio || "",
+        isVerified: !!b.blocked.isVerified,
+        verification: b.blocked.verification || { status: "unverified" },
+        accountType: b.blocked.accountType || "reader",
+        blockedAt: b.createdAt,
+      }));
+
+    res.json({
+      success: true,
+      data,
+      total: data.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/users/:userId/block-status
+// Check block status between authenticated user and target user
+const getBlockStatus = async (req, res, next) => {
+  try {
+    const rawTargetId = req.params.userId || req.params.id;
+    const clean = (rawTargetId || "").trim().replace(/^@/, "");
+    let targetUser = null;
+    if (clean.match(/^[0-9a-fA-F]{24}$/)) {
+      targetUser = await User.findById(clean);
+    }
+    if (!targetUser) {
+      targetUser = await User.findOne({ username: clean.toLowerCase() });
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: "Subscriber account not found." });
+    }
+
+    const [isBlocked, hasBlockedYou] = await Promise.all([
+      Block.exists({ blocker: req.user._id, blocked: targetUser._id }),
+      Block.exists({ blocker: targetUser._id, blocked: req.user._id }),
+    ]);
+
+    res.json({
+      success: true,
+      isBlocked: !!isBlocked,
+      hasBlockedYou: !!hasBlockedYou,
+      canInteract: !isBlocked && !hasBlockedYou,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   loginOrRegister,
   forgotPassword,
@@ -1178,4 +1379,8 @@ module.exports = {
   recordReadingHistory,
   removeReadingHistoryItem,
   clearReadingHistory,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
+  getBlockStatus,
 };

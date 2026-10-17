@@ -2,6 +2,7 @@ const Follow = require("../models/Follow");
 const Article = require("../models/Article");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
+const Block = require("../models/Block");
 const { getIO, emitNotification } = require("../config/socket");
 
 // POST /api/follows or POST /api/follows/:userId
@@ -54,6 +55,20 @@ const followTarget = async (req, res, next) => {
         return res.status(400).json({
           success: false,
           message: "Broadsheet guidelines do not permit following your own subscriber profile.",
+        });
+      }
+
+      // Check if either user has blocked the other
+      const blockExists = await Block.exists({
+        $or: [
+          { blocker: req.user._id, blocked: targetUser._id },
+          { blocker: targetUser._id, blocked: req.user._id },
+        ],
+      });
+      if (blockExists) {
+        return res.status(403).json({
+          success: false,
+          message: "Interaction between these broadsheet accounts is restricted.",
         });
       }
 

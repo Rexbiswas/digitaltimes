@@ -32,6 +32,26 @@ const getNotifications = async (req, res, next) => {
       $and: [userClause],
     };
 
+    // Exclude notifications from or involving blocked accounts
+    if (userId) {
+      try {
+        const Block = require("../models/Block");
+        const blocks = await Block.find({
+          $or: [{ blocker: userId }, { blocked: userId }],
+        }).lean();
+        if (blocks.length > 0) {
+          const blockedIds = blocks.map((b) =>
+            b.blocker.toString() === userId.toString() ? b.blocked : b.blocker
+          );
+          const blockedIdStrs = blockedIds.map((id) => id.toString());
+          query.$and.push(
+            { actor: { $nin: blockedIds } },
+            { "metadata.followerId": { $nin: blockedIdStrs } }
+          );
+        }
+      } catch (blockErr) {}
+    }
+
     if (unreadOnly === "true") {
       query.$and.push({ $or: [{ isRead: false }, { read: false }] });
     }
