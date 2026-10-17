@@ -800,12 +800,8 @@ export default function EditorialAuthScreen({
             setIsGooglePending(false);
           },
           error_callback: (err) => {
-            console.warn("Google OAuth cancelled or origin warning:", err);
+            console.warn("Google OAuth cancelled or error:", err);
             setIsGooglePending(false);
-            setAuthBanner({
-              type: "warning",
-              message: "Google OAuth Origin Note: Add 'https://digitaltimes.vercel.app' to 'Authorized JavaScript Origins' in your Google Cloud Console. Or use 1-Click Instant Sign-In below.",
-            });
           },
         });
 
@@ -817,24 +813,24 @@ export default function EditorialAuthScreen({
         tokenClient.requestAccessToken({ prompt: "consent" });
         return;
       } catch (err) {
-        console.warn("Google Token Client popup failed, continuing:", err);
+        console.warn("Google Token Client popup failed:", err);
+        setIsGooglePending(false);
+      }
+    } else if (typeof window !== "undefined" && window.google?.accounts?.id?.prompt) {
+      try {
+        window.google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            setIsGooglePending(false);
+          }
+        });
+        return;
+      } catch (err) {
+        console.warn("Google One Tap prompt failed:", err);
+        setIsGooglePending(false);
       }
     }
 
-    // 2. Direct 1-Click Authentication (Real-time application UX):
-    // Directly logs the reader in with 1 click without opening any questionnaire modal!
-    const currentEmail = (authMode === "signin" ? signInEmail : signUpEmail).trim();
-    const currentName = authMode === "signup" ? signUpName.trim() : "";
-    const emailToAuth = currentEmail && EMAIL_REGEX.test(currentEmail)
-      ? currentEmail
-      : "reader.google@digitaltimes.com";
-    const nameToAuth =
-      currentName ||
-      (emailToAuth.includes("@")
-        ? emailToAuth.split("@")[0].replace(/[._]/g, " ")
-        : "Google Correspondent");
-
-    executeGoogleAuth(emailToAuth, nameToAuth);
+    setIsGooglePending(false);
   };
 
   return (
@@ -1322,17 +1318,6 @@ export default function EditorialAuthScreen({
                       PRESS PASS
                     </span>
                   </button>
-                  {/* Instant 1-Click Google Press Pass Fallback */}
-                  <div className="mt-1.5 flex items-center justify-between text-[9px] font-mono text-[#39352D] px-1">
-                    <span className="text-[#666666]">Origin mismatch / popup blocked?</span>
-                    <button
-                      type="button"
-                      onClick={() => executeGoogleAuth("rexbiswas1@gmail.com", "Rex Biswas")}
-                      className="text-[#9F3028] hover:text-[#201E19] font-bold underline cursor-pointer hover:bg-[#9F3028]/10 px-1 py-0.5 rounded-xs transition-colors"
-                    >
-                      ⚡ Instant Sign-In as rexbiswas1@gmail.com
-                    </button>
-                  </div>
                 </div>
 
                 {/* Link to Create Account Form */}
